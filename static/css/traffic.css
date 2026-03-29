@@ -1,0 +1,177 @@
+/* ── Traffic pulse layer ──────────────────────────────────────────────────── */
+#traffic-pulse-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 30;
+  overflow: hidden;
+}
+
+/* ── Pulse dots ───────────────────────────────────────────────────────────── */
+.traffic-pulse {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+}
+.traffic-ok {
+  background: var(--success);
+  box-shadow: 0 0 7px 2px rgba(76,175,130,0.65);
+}
+.traffic-err {
+  background: var(--danger);
+  box-shadow: 0 0 7px 2px rgba(224,82,82,0.65);
+}
+/* Landing burst when pulse arrives at a pod */
+.traffic-land {
+  animation: trafficLand 0.38s ease-out forwards;
+}
+@keyframes trafficLand {
+  0%   { transform: var(--tx, translate(0,0)) scale(1); opacity: 1; }
+  55%  { transform: var(--tx, translate(0,0)) scale(3); opacity: 0.5; }
+  100% { transform: var(--tx, translate(0,0)) scale(0); opacity: 0; }
+}
+
+/* ── Traffic stats overlay ────────────────────────────────────────────────── */
+#traffic-overlay {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 216px;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+  z-index: 35;
+  overflow: hidden;
+  animation: gpSlideIn 0.2s ease;
+}
+.traffic-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 7px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel-2);
+}
+.traffic-overlay-title {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+#traffic-stop-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--danger);
+  font-size: 10px;
+  padding: 2px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+#traffic-stop-btn:hover {
+  background: rgba(224,82,82,0.12);
+  border-color: var(--danger);
+}
+
+/* 2×2 stats grid */
+.traffic-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.traffic-stat {
+  background: var(--bg-panel);
+  padding: 9px 8px;
+  text-align: center;
+}
+.traffic-stat-val {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--mono);
+  line-height: 1.1;
+}
+.traffic-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* RPS slider row */
+.traffic-rps-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 10px;
+}
+.traffic-rps-row label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+#traffic-rps-slider {
+  flex: 1;
+  accent-color: var(--accent);
+  height: 3px;
+  cursor: pointer;
+}
+#traffic-rps-val {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 20px;
+  text-align: right;
+}
+
+/* ── Active traffic indicator on node ────────────────────────────────────── */
+.node.traffic-active .node-shape {
+  stroke-dasharray: 5 3;
+  animation: trafficNodePulse 1.2s linear infinite;
+}
+@keyframes trafficNodePulse {
+  to { stroke-dashoffset: -16; }
+}
+
+/* ── "External" origin badge on canvas ───────────────────────────────────── */
+.traffic-ext-badge {
+  position: absolute;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+  padding: 2px 5px;
+  pointer-events: none;
+  z-index: 31;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+
+/* Light theme */
+[data-theme="light"] #traffic-overlay {
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+}
+[data-theme="light"] .traffic-ok {
+  box-shadow: 0 0 7px 2px rgba(22,163,74,0.5);
+}
+[data-theme="light"] .traffic-err {
+  box-shadow: 0 0 7px 2px rgba(220,38,38,0.5);
+}

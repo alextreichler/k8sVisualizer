@@ -1,0 +1,9 @@
+{
+  "versions": ["v24.3.1"],
+  "crds": {
+    "Redpanda":      { "crd": "redpandas.cluster.redpanda.com",  "versions": ["v24.3.1"] },
+    "RedpandaTopic": { "crd": "topics.cluster.redpanda.com",     "versions": ["v24.3.1"] },
+    "RedpandaUser":  { "crd": "users.cluster.redpanda.com",      "versions": ["v24.3.1"] },
+    "RedpandaSchema":{ "crd": "schemas.cluster.redpanda.com",    "versions": ["v24.3.1"] }
+  }
+}

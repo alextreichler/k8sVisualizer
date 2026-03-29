@@ -1,0 +1,43 @@
+version: '3'
+
+vars:
+  BINARY: k8svis
+  VERSIONS: latest
+
+tasks:
+  build:
+    desc: Compile the server binary
+    cmds:
+      - go build -trimpath -ldflags="-s -w" -o {{.BINARY}} .
+    sources:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+    generates:
+      - '{{.BINARY}}'
+
+  run:
+    desc: Build and run with a full sample cluster
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} --mode=full
+
+  update-schemas:
+    desc: |
+      Fetch Redpanda operator CRD schemas from GitHub and write them to
+      internal/schemas/data/. Commit the result — the binary embeds these
+      files at build time so no network access is needed at runtime.
+
+      Override the version(s):
+        task update-schemas VERSIONS=v24.3.1,v24.2.0
+
+      Use a GitHub token to raise the rate limit from 60 to 5000 req/hr:
+        GITHUB_TOKEN=ghp_... task update-schemas
+    cmds:
+      - go run ./cmd/update-schemas -versions {{.VERSIONS}} -out ./internal/schemas/data
+      - echo "Done. Review changes in internal/schemas/data/ then commit them."
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -f {{.BINARY}}

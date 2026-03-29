@@ -1,0 +1,272 @@
+/* ---- Detail panel ---- */
+
+.kind-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ---- Educational description ---- */
+.node-description {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  background: var(--bg-panel-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 8px 10px;
+  margin-bottom: 14px;
+}
+.node-description strong {
+  color: var(--text);
+}
+
+/* Kind badge colors mirror node colors — dark theme */
+.kind-Deployment     { background: #1a4a8a; color: #7ab4f7; }
+.kind-ReplicaSet     { background: #1a5c5c; color: #3ab8b8; }
+.kind-Pod            { background: #1a4a2e; color: #4caf82; }
+.kind-Service        { background: #3a1a6a; color: #b07af0; }
+.kind-Ingress        { background: #4a2800; color: #ff7043; }
+.kind-ConfigMap      { background: #003a4a; color: #26c6da; }
+.kind-Secret         { background: #3a0010; color: #ef9a9a; }
+.kind-PersistentVolumeClaim { background: #3a2000; color: #a1887f; }
+.kind-PersistentVolume      { background: #2a1500; color: #a1887f; }
+.kind-StatefulSet    { background: #0a1a4a; color: #6b7dff; }
+.kind-DaemonSet      { background: #1a1a4a; color: #b39ddb; }
+.kind-HorizontalPodAutoscaler { background: #4a0030; color: #f48fb1; }
+.kind-Namespace      { background: #1e2537; color: #8899b4; }
+.kind-CronJob        { background: #1a3a2a; color: #66bb6a; }
+.kind-ControlPlaneComponent { background: #2c1a4d; color: #b388ff; }
+.kind-default        { background: #1e2537; color: #8899b4; }
+
+/* Kind badge colors — light theme */
+[data-theme="light"] .kind-Deployment     { background: #dbeafe; color: #1d4ed8; }
+[data-theme="light"] .kind-ReplicaSet     { background: #ccfbf1; color: #0f766e; }
+[data-theme="light"] .kind-Pod            { background: #dcfce7; color: #15803d; }
+[data-theme="light"] .kind-Service        { background: #ede9fe; color: #7c3aed; }
+[data-theme="light"] .kind-Ingress        { background: #ffedd5; color: #c2410c; }
+[data-theme="light"] .kind-ConfigMap      { background: #cffafe; color: #0e7490; }
+[data-theme="light"] .kind-Secret         { background: #fee2e2; color: #991b1b; }
+[data-theme="light"] .kind-PersistentVolumeClaim { background: #fef3c7; color: #92400e; }
+[data-theme="light"] .kind-PersistentVolume      { background: #fef9c3; color: #854d0e; }
+[data-theme="light"] .kind-StatefulSet    { background: #e0e7ff; color: #3730a3; }
+[data-theme="light"] .kind-DaemonSet      { background: #ede9fe; color: #5b21b6; }
+[data-theme="light"] .kind-HorizontalPodAutoscaler { background: #fce7f3; color: #9d174d; }
+[data-theme="light"] .kind-Namespace      { background: #f1f5f9; color: #475569; }
+[data-theme="light"] .kind-CronJob        { background: #d1fae5; color: #065f46; }
+[data-theme="light"] .kind-ControlPlaneComponent { background: #ede9fe; color: #5b21b6; }
+[data-theme="light"] .kind-default        { background: #f1f5f9; color: #475569; }
+
+/* Phase badge */
+.phase-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.phase-Running     { background: rgba(76,175,130,0.15); color: #4caf82; }
+.phase-Pending     { background: rgba(245,166,35,0.15); color: #f5a623; }
+.phase-Terminating { background: rgba(158,158,158,0.15); color: #9e9e9e; }
+.phase-Failed           { background: rgba(224,82,82,0.15); color: #e05252; }
+.phase-Succeeded        { background: rgba(121,134,203,0.15); color: #7986cb; }
+.phase-ContainerCreating { background: rgba(245,166,35,0.12); color: #f5a623; }
+.phase-CrashLoopBackOff  { background: rgba(224,82,82,0.18); color: #e05252; }
+.phase-ImagePullBackOff  { background: rgba(255,112,67,0.15); color: #ff7043; }
+.phase-OOMKilled         { background: rgba(239,83,80,0.15); color: #ef5350; }
+
+/* ---- Meta table ---- */
+.meta-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 14px;
+}
+
+.meta-table td {
+  padding: 4px 0;
+  vertical-align: top;
+}
+
+.meta-table td:first-child {
+  color: var(--text-muted);
+  width: 44%;
+  padding-right: 8px;
+  font-size: 12px;
+}
+
+.meta-table td:last-child {
+  font-family: var(--mono);
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--text);
+}
+
+/* ---- Labels list ---- */
+.labels-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0;
+}
+.label-pill {
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-muted);
+}
+
+/* ---- Section heading in panel ---- */
+.panel-section {
+  margin-bottom: 14px;
+}
+.panel-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ---- Action buttons in panel ---- */
+.panel-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.btn {
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  color: var(--text);
+  font-size: 12px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn:hover {
+  background: var(--bg-panel);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+.btn-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btn-danger:hover {
+  background: rgba(224,82,82,0.1);
+}
+.btn-failure {
+  border-color: rgba(224,82,82,0.5);
+  color: #e07070;
+  font-size: 11px;
+}
+.btn-failure:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(224,82,82,0.08);
+}
+
+/* ---- Failure educational callout ---- */
+.failure-callout {
+  background: rgba(224,82,82,0.06);
+  border-left: 3px solid var(--danger);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+.failure-callout-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.failure-callout-msg {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 5px;
+}
+.failure-callout-fix {
+  font-size: 11px;
+  color: var(--accent);
+}
+.failure-callout-fix code {
+  font-family: var(--mono);
+  background: var(--bg-panel-2);
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+
+/* ---- Replica stepper ---- */
+.replica-stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.replica-stepper span {
+  min-width: 28px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ---- Version annotation callout ---- */
+.version-callout {
+  background: rgba(255, 112, 67, 0.08);
+  border: 1px solid rgba(255, 112, 67, 0.3);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #ff9e80;
+  line-height: 1.5;
+}
+.version-callout.deprecated {
+  background: rgba(224,82,82,0.08);
+  border-color: rgba(224,82,82,0.3);
+  color: #ef9a9a;
+}
+.version-callout .callout-title {
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+/* ---- JSON spec viewer ---- */
+.spec-viewer {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  overflow-x: auto;
+  white-space: pre;
+  max-height: 260px;
+  overflow-y: auto;
+  line-height: 1.5;
+}

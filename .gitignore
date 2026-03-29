@@ -1,0 +1,14 @@
+# Reference repos — too large, not your code
+kubernetes/
+redpanda-operator/
+
+# Build output
+k8svis
+k8svisualizer
+bin/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

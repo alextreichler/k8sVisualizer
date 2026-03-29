@@ -1,0 +1,37 @@
+/* ---- Edge base ---- */
+.edge {
+  fill: none;
+  stroke-width: 1.5;
+  transition: stroke-width 0.15s, opacity 0.15s;
+}
+.edge:hover { stroke-width: 2.5; }
+
+/* ---- Edge types ---- */
+.edge-owns     { stroke: #4a5a7a; }
+.edge-selects  { stroke: #7c4dff; stroke-dasharray: 5 3; }
+.edge-mounts   { stroke: #26c6da; stroke-dasharray: 3 3; }
+.edge-bound    { stroke: #a1887f; }
+.edge-routes   { stroke: #ff7043; }
+.edge-scales   { stroke: #f06292; stroke-dasharray: 6 3; }
+.edge-headless { stroke: #3d5afe; stroke-dasharray: 2 4; }
+.edge-watches  { stroke: #26a69a; }
+.edge-stores   { stroke: #ef5350; }
+
+.edge-uses         { stroke: #80cbc4; stroke-dasharray: 4 3; }
+.edge-binds        { stroke: #ce93d8; }
+.edge-subject      { stroke: #ce93d8; stroke-dasharray: 5 3; }
+.edge-scheduled-on { stroke: #78909c; stroke-dasharray: 2 5; opacity: 0.6; }
+
+/* ---- Traffic flow animation ---- */
+@keyframes flow-dash {
+  to { stroke-dashoffset: -24; }
+}
+.edge-traffic {
+  stroke-dasharray: 8 6;
+  stroke-dashoffset: 0;
+  stroke-width: 2.5 !important;
+  animation: flow-dash 0.6s linear infinite;
+}
+
+/* ---- Arrowheads (defined in SVG <defs>) ---- */
+/* colors are set via fill on the marker element in graph.js */

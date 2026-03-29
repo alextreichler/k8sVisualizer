@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>k8sVisualizer</title>
+  <link rel="stylesheet" href="/css/reset.css">
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="/css/nodes.css">
+  <link rel="stylesheet" href="/css/edges.css">
+  <link rel="stylesheet" href="/css/panel.css">
+  <link rel="stylesheet" href="/css/controls.css">
+  <link rel="stylesheet" href="/css/terminal.css">
+  <link rel="stylesheet" href="/css/traffic.css">
+</head>
+<body>
+
+<!-- ========== Header ========== -->
+<header id="header">
+  <h1>k8s<span>Visualizer</span></h1>
+
+  <label for="version-select" style="font-size:12px;color:var(--text-muted);flex-shrink:0">K8s</label>
+  <select id="version-select" class="version-select" title="Switch Kubernetes version">
+    <!-- populated by controls.js -->
+  </select>
+
+  <div class="header-sep"></div>
+
+  <button class="toolbar-btn" id="btn-reset" title="Reset cluster">↺ Reset</button>
+  <button class="toolbar-btn" id="btn-zoom-fit" title="Fit graph (Ctrl+Shift+F)">⊡ Fit</button>
+  <button class="toolbar-btn btn-primary" id="btn-create" title="Create a resource (Ctrl+N)">+ Create</button>
+
+  <div class="header-sep"></div>
+
+  <button class="toolbar-btn" id="btn-export" title="Export cluster as YAML (Ctrl+E)">↓ Export</button>
+  <button class="toolbar-btn btn-secondary" id="btn-shortcuts" title="Keyboard shortcuts (?)">⌨ Keys</button>
+  <button class="toolbar-btn btn-secondary" id="btn-guided-mode" title="Toggle guided mode (G)">🎓 Guide</button>
+  <button class="toolbar-btn btn-secondary" id="btn-theme" title="Toggle light/dark (Ctrl+T)">☀ Light</button>
+
+  <div class="spacer"></div>
+
+  <div id="connection-status">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-label">connecting…</span>
+  </div>
+</header>
+
+<!-- ========== Sidebar ========== -->
+<aside id="sidebar">
+
+  <!-- Namespaces — always visible -->
+  <div class="sidebar-section">
+    <h2>Namespaces</h2>
+    <div class="ns-pills" id="ns-pills">
+      <button class="ns-pill all active" data-ns="">All</button>
+    </div>
+  </div>
+
+  <!-- Stats — always visible, compact grid -->
+  <div class="sidebar-section">
+    <h2>Cluster Health</h2>
+    <div class="stats-strip">
+      <div class="stat-item"><div class="stat-value" id="stat-nodes">0</div><div class="stat-label">Resources</div></div>
+      <div class="stat-item"><div class="stat-value" id="stat-edges">0</div><div class="stat-label">Edges</div></div>
+      <div class="stat-item"><div class="stat-value" id="stat-pods">0</div><div class="stat-label">Pods</div></div>
+      <div class="stat-item"><div class="stat-value" id="stat-running">0</div><div class="stat-label">Running</div></div>
+    </div>
+    <div class="health-bar-wrap">
+      <div class="health-bar-label">
+        <span>Pod health</span>
+        <span id="health-pct">—</span>
+      </div>
+      <div class="health-bar-track">
+        <div class="health-bar-fill" id="health-bar-fill"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CLUSTER SETUP ──────────────────────────────────────── -->
+  <div class="sidebar-group-label">Cluster Setup</div>
+
+  <!-- Bootstrap Cluster — collapsible, closed by default -->
+  <div class="sidebar-section collapsible" data-open="false">
+    <h2 class="section-toggle">Bootstrap Cluster <span class="toggle-chevron">▾</span></h2>
+    <div class="section-body">
+
+      <div style="margin-bottom:8px">
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">Deployment method</label>
+        <select id="bootstrap-method" style="width:100%;padding:4px 6px;font-size:12px">
+          <option value="kubeadm">kubeadm  (bare metal / VM)</option>
+          <option value="managed">Managed  (EKS / GKE / AKS)</option>
+          <option value="k3s">k3s  (lightweight / edge)</option>
+          <option value="ha">HA Control Plane (3+3+3)</option>
+        </select>
+      </div>
+
+      <!-- kubeadm steps (default) -->
+      <div id="bootstrap-kubeadm" style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px">
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-bootstrap-controlplane">⓪ Initialize Control Plane</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-bootstrap-coredns">① Install CoreDNS</button>
+        <div style="display:flex;gap:4px;align-items:stretch">
+          <select id="cni-select" style="flex:1;font-size:12px">
+            <option value="flannel">Flannel (VXLAN)</option>
+            <option value="calico">Calico (BGP)</option>
+            <option value="cilium">Cilium (eBPF)</option>
+          </select>
+          <button class="toolbar-btn scenario-btn" id="btn-bootstrap-cni" style="white-space:nowrap">② CNI</button>
+        </div>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-bootstrap-kubeproxy">③ Install kube-proxy</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-bootstrap-nodelocaldns" style="opacity:0.8">④ NodeLocal DNSCache <span style="font-size:10px;color:var(--text-muted)">(optional)</span></button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-bootstrap-workers" style="margin-top:4px">⑤ Join Worker Nodes</button>
+      </div>
+
+      <!-- managed steps (hidden by default) -->
+      <div id="bootstrap-managed" style="display:none;flex-direction:column;gap:5px;margin-bottom:8px">
+        <p style="font-size:11px;color:var(--text-muted);margin:0 0 4px;line-height:1.5">
+          Control plane fully managed by cloud provider.
+        </p>
+        <select id="managed-provider" style="width:100%;padding:4px 6px;font-size:12px">
+          <option value="eks">Amazon EKS</option>
+          <option value="gke">Google GKE</option>
+          <option value="aks">Azure AKS</option>
+        </select>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-bootstrap-managed">▶ Provision Managed Cluster</button>
+      </div>
+
+      <!-- k3s steps (hidden by default) -->
+      <div id="bootstrap-k3s" style="display:none;flex-direction:column;gap:5px;margin-bottom:8px">
+        <p style="font-size:11px;color:var(--text-muted);margin:0 0 4px;line-height:1.5">
+          Single binary — control plane, Flannel (embedded in agent, runs in kube-system), CoreDNS, Traefik, and local-path storage.
+        </p>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-bootstrap-k3s">▶ Install k3s</button>
+      </div>
+
+      <!-- HA control plane (shown for all methods via separate button) -->
+      <div id="bootstrap-ha" style="display:none;flex-direction:column;gap:5px;margin-bottom:8px">
+        <p style="font-size:11px;color:var(--text-muted);margin:0 0 4px;line-height:1.5">
+          Production HA: 3 etcd + 3 API servers behind an external load balancer + 3 workers.
+        </p>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-bootstrap-ha">▶ Bootstrap HA Cluster (3+3+3)</button>
+      </div>
+
+      <div id="bootstrap-log" class="scenario-log" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── SIMULATIONS ─────────────────────────────────────────── -->
+  <div class="sidebar-group-label">Simulations</div>
+
+  <!-- Scenarios — collapsible, open by default -->
+  <div class="sidebar-section collapsible" data-open="true">
+    <h2 class="section-toggle">Scenarios <span class="toggle-chevron">▾</span></h2>
+    <div class="section-body">
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+          <label for="redpanda-operator-version" style="font-size:11px;color:var(--text-muted);white-space:nowrap">Operator mode:</label>
+          <select id="redpanda-operator-version" style="font-size:11px;padding:2px 4px;flex:1;background:var(--bg-input,#1e1e2e);color:var(--text-primary,#cdd6f4);border:1px solid var(--border,#45475a);border-radius:3px">
+            <option value="direct">v2.x — direct (Go reconciler)</option>
+            <option value="flux">v0.x — useFlux (FluxCD HelmRelease)</option>
+          </select>
+        </div>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-scenario-redpanda">▶ Deploy Redpanda (Simulated)</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-scenario-argocd">▶ Install ArgoCD (GitOps)</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-scenario-rbac">▶ RBAC Tutorial</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-scenario-hpa">▶ HPA Demo (Autoscale on CPU)</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-scenario-rolling">▶ Rolling Update</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-scenario-nodedrain">▶ Node Drain & Upgrade</button>
+      </div>
+      <div id="scenario-log" class="scenario-log" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- Guide: Redpanda — collapsible, closed by default -->
+  <div class="sidebar-section collapsible" data-open="false">
+    <h2 class="section-toggle">Guide: Redpanda <span class="toggle-chevron">▾</span></h2>
+    <div class="section-body">
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.5">
+        Follow the official Kubernetes deployment guide step-by-step.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px">
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-guide-certmanager">① Install cert-manager</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-guide-redpanda">② Install redpanda (operator + chart)</button>
+      </div>
+      <div id="guide-log" class="scenario-log" style="display:none"></div>
+
+      <!-- Config layers quick reference -->
+      <details style="margin-top:10px">
+        <summary style="font-size:11px;font-weight:600;cursor:pointer;color:var(--text-primary);user-select:none">
+          ⓘ Helm values → Config layers
+        </summary>
+        <div style="font-size:10px;line-height:1.7;margin-top:6px;color:var(--text-muted)">
+          <div style="margin-bottom:6px">
+            <span style="color:var(--blue,#89b4fa);font-weight:600">Layer 1 — K8s objects</span><br>
+            Values that become StatefulSet, PVC, or Service specs.<br>
+            <code>statefulset.replicas</code>, <code>storage.persistentVolume.size</code>,
+            <code>resources.cpu.cores</code>, <code>resources.memory.container.max</code><br>
+            <em>Changes trigger a rolling restart or PVC resize.</em>
+          </div>
+          <div style="margin-bottom:6px">
+            <span style="color:var(--green,#a6e3a1);font-weight:600">Layer 2 — redpanda.yaml (broker config)</span><br>
+            Helm renders these into the <code>cm-redpanda</code> ConfigMap, mounted at
+            <code>/etc/redpanda/redpanda.yaml</code>. Read once at broker startup.<br>
+            <code>listeners.kafka.port</code>, <code>listeners.http.port</code>,
+            <code>listeners.schemaRegistry.port</code>, <code>auth.sasl.enabled</code>,
+            <code>tls.enabled</code>, <code>external.type</code><br>
+            <em>⚠ Requires pod restart to take effect.</em>
+          </div>
+          <div>
+            <span style="color:var(--peach,#fab387);font-weight:600">Layer 3 — Admin API (live, no restart)</span><br>
+            Applied by the post-install Job via <code>PUT /v1/cluster_config</code>.
+            The <code>configWatcher</code> sidecar re-applies on every CR change.<br>
+            <code>config.cluster.*</code>, <code>config.tunable.*</code><br>
+            Examples: <code>log_segment_size_min</code>, <code>kafka_batch_max_bytes</code>,
+            <code>compacted_log_segment_size</code><br>
+            <em>✓ Hot-reloadable. No broker restart needed.</em>
+          </div>
+          <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border,#313244)">
+            <strong>Memory/CPU is special:</strong> affects both Layer 1 (K8s limits) and the
+            broker CLI flags <code>--smp</code> and <code>--memory</code> passed in the StatefulSet
+            <code>command:</code> array.
+          </div>
+          <div style="margin-top:6px">
+            <strong>Tip:</strong> Click the <em>Redpanda CR</em> node in the graph to see the full
+            layer breakdown with actual values.
+          </div>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <!-- ── CHAOS ─────────────────────────────────────────────────── -->
+  <div class="sidebar-group-label">Chaos Engineering</div>
+
+  <!-- Chaos Injection — collapsible, closed by default -->
+  <div class="sidebar-section collapsible" data-open="false">
+    <h2 class="section-toggle">Failure Injection <span class="toggle-chevron">▾</span></h2>
+    <div class="section-body">
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.5">
+        Inject failures into a running cluster to learn how Kubernetes responds and how to diagnose issues.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px">
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-chaos-crash-loop" title="Inject CrashLoopBackOff into a random running pod">⚡ CrashLoopBackOff (random pod)</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-chaos-oom" title="Simulate OOMKill on a random running pod">⚡ OOMKilled (random pod)</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-chaos-image-pull" title="Simulate ImagePullBackOff on a random running pod">⚡ ImagePullBackOff (random pod)</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-chaos-liveness" title="Simulate liveness probe failure on a random running pod">⚡ Liveness Probe Fail (random pod)</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-chaos-node-notready" title="Simulate a worker node going NotReady">⚡ Node NotReady (random node)</button>
+      </div>
+      <div id="chaos-log" class="scenario-log" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── TOOLS ───────────────────────────────────────────────── -->
+  <div class="sidebar-group-label">Tools</div>
+
+  <!-- Real Helm Chart — collapsible, closed by default -->
+  <div class="sidebar-section collapsible" data-open="false">
+    <h2 class="section-toggle">Real Helm Chart <span class="toggle-chevron">▾</span></h2>
+    <div class="section-body">
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.5">
+        Render and import resources via <code style="font-size:10px">helm template</code>.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px">
+        <textarea id="helm-values" rows="5" style="width:100%;font-size:11px;font-family:var(--mono);padding:6px;resize:vertical;box-sizing:border-box" placeholder="Paste values.yaml overrides here..."></textarea>
+        <button class="toolbar-btn sidebar-btn" id="btn-helm-apply" style="background:var(--success);color:white;border-color:var(--success)">⎈ Apply Real Helm Chart</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Show kinds — collapsible, closed by default, grows to fill remaining space -->
+  <div class="sidebar-section collapsible" data-open="false" style="flex:1;overflow-y:auto;min-height:0">
+    <h2 class="section-toggle">Show kinds <span class="toggle-chevron">▾</span></h2>
+    <div class="section-body">
+      <div class="kind-filter-list" id="kind-filter-list">
+        <!-- populated by controls.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Collapse strip at the bottom of the sidebar -->
+  <div id="sidebar-collapse-strip">
+    <button class="sidebar-collapse-btn" id="btn-sidebar-collapse" title="Collapse sidebar ([)">◀ Collapse</button>
+  </div>
+
+</aside>
+
+<!-- ========== Cluster Events panel (collapsible bottom drawer) ========== -->
+<div id="events-panel" class="events-panel collapsed">
+  <div id="events-header" class="events-header">
+    <span class="events-title">⚡ Cluster Events</span>
+    <span id="events-count" class="events-count">0 events</span>
+    <button id="events-clear" class="events-clear-btn" title="Clear events">✕ Clear</button>
+    <button id="events-toggle" class="events-toggle-btn" title="Expand/collapse">▲</button>
+  </div>
+  <div class="events-body">
+    <table class="events-table">
+      <thead>
+        <tr>
+          <th>TIME</th><th>TYPE</th><th>OBJECT</th><th>REASON</th><th>MESSAGE</th>
+        </tr>
+      </thead>
+      <tbody id="events-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ========== DOOM Terminal ========== -->
+<div id="terminal-overlay">
+  <div id="terminal-inner">
+    <div id="terminal-topbar">
+      <span>⌨ k8sVisualizer Terminal</span>
+      <span class="term-hint">` or ~ to toggle · Escape to close</span>
+    </div>
+    <div id="terminal-output"></div>
+    <div id="terminal-input-row">
+      <span id="terminal-prompt-label">$ </span>
+      <input id="terminal-input" type="text" autocomplete="off" spellcheck="false" placeholder="type a command…">
+    </div>
+  </div>
+</div>
+
+<!-- ========== Canvas ========== -->
+<main id="canvas">
+  <!-- Resize handles — sit at each edge of the canvas touching the panels -->
+  <div id="sidebar-resize-handle" class="resize-handle resize-handle-left" title="Drag to resize sidebar"></div>
+  <div id="panel-resize-handle" class="resize-handle resize-handle-right" title="Drag to resize detail panel"></div>
+
+  <!-- Edge tabs — always visible, toggle each panel open/closed -->
+  <button id="sidebar-edge-tab" class="panel-edge-tab panel-edge-tab-left" title="Toggle sidebar ([)">‹</button>
+  <button id="panel-edge-tab"   class="panel-edge-tab panel-edge-tab-right" title="Toggle detail panel (])">›</button>
+
+  <svg id="graph-svg" xmlns="http://www.w3.org/2000/svg">
+    <defs id="svg-defs">
+      <!-- arrow markers injected by graph.js -->
+    </defs>
+    <!-- viewport group: all pan/zoom is done here -->
+    <g id="viewport">
+      <g id="zones-layer"></g>
+      <g id="edges-layer"></g>
+      <g id="nodes-layer"></g>
+    </g>
+  </svg>
+
+  <!-- Zoom controls -->
+  <div id="zoom-controls">
+    <button class="zoom-btn" id="btn-zoom-in"  title="Zoom in">+</button>
+    <button class="zoom-btn" id="btn-zoom-out" title="Zoom out">−</button>
+    <button class="zoom-btn" id="btn-zoom-reset" title="Reset zoom" style="font-size:11px">1:1</button>
+  </div>
+
+  <!-- Legend overlay — floating bottom-left button -->
+  <div id="legend-overlay">
+    <button id="legend-overlay-btn" title="Toggle legend">⬚ Legend</button>
+    <div id="legend-overlay-panel">
+      <!-- populated by legend.js -->
+    </div>
+  </div>
+
+  <!-- Search / filter bar (shown with Ctrl+F) -->
+  <div id="search-bar">
+    <span style="font-size:12px;color:var(--text-muted);flex-shrink:0">⌕</span>
+    <input id="search-input" type="search" autocomplete="off" spellcheck="false" placeholder="Filter nodes by name, kind, namespace…">
+    <span id="search-count"></span>
+    <button id="search-close" title="Clear (Esc)">✕</button>
+  </div>
+
+  <!-- Hover tooltip -->
+  <div id="node-tooltip">
+    <div class="tooltip-kind" id="tt-kind"></div>
+    <div class="tooltip-name" id="tt-name"></div>
+    <div class="tooltip-ns"   id="tt-ns"></div>
+    <div class="tooltip-meta" id="tt-meta" style="display:none"></div>
+    <div class="tooltip-hint">Click for details</div>
+  </div>
+
+  <div id="statusbar">drag to pan · scroll to zoom · click node for details · Ctrl+F to search</div>
+
+  <!-- Traffic stats overlay -->
+  <div id="traffic-overlay" style="display:none">
+    <div class="traffic-overlay-header">
+      <span class="traffic-overlay-title" id="traffic-title">Traffic</span>
+      <button id="traffic-stop-btn">■ Stop</button>
+    </div>
+    <div class="traffic-stats-grid">
+      <div class="traffic-stat">
+        <div class="traffic-stat-val" id="ts-ok" style="color:var(--success)">—</div>
+        <div class="traffic-stat-label">Success</div>
+      </div>
+      <div class="traffic-stat">
+        <div class="traffic-stat-val" id="ts-err" style="color:var(--text-muted)">—</div>
+        <div class="traffic-stat-label">Errors</div>
+      </div>
+      <div class="traffic-stat">
+        <div class="traffic-stat-val" id="ts-total" style="color:var(--text-muted)">—</div>
+        <div class="traffic-stat-label">Total</div>
+      </div>
+      <div class="traffic-stat">
+        <div class="traffic-stat-val" id="ts-errrate" style="color:var(--success)">—</div>
+        <div class="traffic-stat-label">Error %</div>
+      </div>
+    </div>
+    <div class="traffic-rps-row">
+      <label for="traffic-rps-slider">RPS</label>
+      <input type="range" id="traffic-rps-slider" min="1" max="20" value="5">
+      <span id="traffic-rps-val">5</span>
+    </div>
+  </div>
+
+  <!-- Guided mode panel (floating, bottom-center of canvas) -->
+  <div id="guided-panel" style="display:none">
+    <div class="gp-header">
+      <span class="gp-badge">🎓 Guide</span>
+      <span class="gp-progress-text" id="gp-progress-text">Step 0 / 0</span>
+      <button class="gp-close-btn" id="gp-close" title="Disable guided mode">✕</button>
+    </div>
+    <div class="gp-progress-bar"><div class="gp-progress-fill" id="gp-progress-fill"></div></div>
+    <div class="gp-body">
+      <div class="gp-kind-badge" id="gp-kind-badge"></div>
+      <div class="gp-step-label" id="gp-step-label"></div>
+      <div class="gp-description" id="gp-description"></div>
+    </div>
+    <div class="gp-footer">
+      <button class="gp-btn gp-btn-skip" id="gp-skip">Skip all</button>
+      <button class="gp-btn gp-btn-next" id="gp-next">Next →</button>
+    </div>
+  </div>
+</main>
+
+<!-- ========== Detail Panel ========== -->
+<aside id="detail-panel">
+  <div id="detail-panel-header">
+    <button id="btn-panel-toggle" title="Collapse detail panel (])">◀</button>
+    <h2 id="detail-title">Details</h2>
+  </div>
+  <div id="detail-panel-body">
+    <div id="detail-panel-empty">Click a resource node to inspect it.</div>
+    <div id="detail-content" style="display:none"></div>
+  </div>
+</aside>
+
+<!-- ========== Resource Editor Modal ========== -->
+<div class="modal-overlay" id="resource-modal" style="display:none">
+  <div class="modal modal-resource">
+    <div class="resource-modal-header">
+      <h3 id="resource-modal-title">Create Resource</h3>
+      <div class="modal-tab-bar">
+        <button class="modal-tab active" id="tab-btn-form">Form</button>
+        <button class="modal-tab" id="tab-btn-yaml">YAML</button>
+      </div>
+    </div>
+    <div id="resource-modal-kind-row" class="form-row" style="padding:0 20px;margin-bottom:0">
+      <label>Kind</label>
+      <select id="resource-modal-kind">
+        <option>Deployment</option>
+        <option>Service</option>
+        <option>ConfigMap</option>
+        <option>Secret</option>
+        <option>PersistentVolumeClaim</option>
+        <option>PersistentVolume</option>
+        <option>Ingress</option>
+        <option>ServiceAccount</option>
+      </select>
+    </div>
+    <div id="resource-modal-form" class="resource-modal-body">
+      <!-- populated dynamically by controls.js -->
+    </div>
+    <div id="resource-modal-yaml" class="resource-modal-body" style="display:none">
+      <textarea id="resource-yaml-editor" spellcheck="false" placeholder="YAML will appear here…"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="resource-modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="resource-modal-submit">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== Keyboard Shortcuts Modal ========== -->
+<div class="modal-overlay" id="shortcuts-modal" style="display:none">
+  <div class="modal shortcuts-modal">
+    <div class="shortcuts-modal-header">
+      <h3>Keyboard Shortcuts</h3>
+      <button class="btn" id="shortcuts-close">✕</button>
+    </div>
+    <div class="shortcuts-modal-body">
+      <div class="shortcuts-group">
+        <div class="shortcuts-group-title">Navigation</div>
+        <div class="shortcut-row"><span class="shortcut-desc">Pan canvas</span><span class="shortcut-keys"><kbd>Drag</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Zoom in / out</span><span class="shortcut-keys"><kbd>Scroll</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Fit graph to view</span><span class="shortcut-keys"><kbd>Ctrl</kbd><span class="shortcut-sep">+</span><kbd>Shift</kbd><span class="shortcut-sep">+</span><kbd>F</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Reset zoom 1:1</span><span class="shortcut-keys"><kbd>Ctrl</kbd><span class="shortcut-sep">+</span><kbd>0</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Move namespace zone</span><span class="shortcut-keys"><kbd>Drag zone box</kbd></span></div>
+      </div>
+      <div class="shortcuts-group">
+        <div class="shortcuts-group-title">Nodes &amp; Resources</div>
+        <div class="shortcut-row"><span class="shortcut-desc">Inspect resource</span><span class="shortcut-keys"><kbd>Click node</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Close detail panel</span><span class="shortcut-keys"><kbd>Esc</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Create resource</span><span class="shortcut-keys"><kbd>Ctrl</kbd><span class="shortcut-sep">+</span><kbd>N</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Search / filter nodes</span><span class="shortcut-keys"><kbd>Ctrl</kbd><span class="shortcut-sep">+</span><kbd>F</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Export cluster YAML</span><span class="shortcut-keys"><kbd>Ctrl</kbd><span class="shortcut-sep">+</span><kbd>E</kbd></span></div>
+      </div>
+      <div class="shortcuts-group">
+        <div class="shortcuts-group-title">Terminal</div>
+        <div class="shortcut-row"><span class="shortcut-desc">Toggle terminal</span><span class="shortcut-keys"><kbd>`</kbd> <span class="shortcut-sep">or</span> <kbd>~</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Close terminal</span><span class="shortcut-keys"><kbd>Esc</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Previous command</span><span class="shortcut-keys"><kbd>↑</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Next command</span><span class="shortcut-keys"><kbd>↓</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Clear terminal</span><span class="shortcut-keys"><kbd>clear</kbd> command</span></div>
+      </div>
+      <div class="shortcuts-group">
+        <div class="shortcuts-group-title">General</div>
+        <div class="shortcut-row"><span class="shortcut-desc">Show this help</span><span class="shortcut-keys"><kbd>?</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Toggle guided mode</span><span class="shortcut-keys"><kbd>G</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Toggle sidebar</span><span class="shortcut-keys"><kbd>[</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Toggle detail panel</span><span class="shortcut-keys"><kbd>]</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Toggle light / dark theme</span><span class="shortcut-keys"><kbd>Ctrl</kbd><span class="shortcut-sep">+</span><kbd>T</kbd></span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Reset cluster</span><span class="shortcut-keys"><kbd>Ctrl</kbd><span class="shortcut-sep">+</span><kbd>R</kbd> (via button)</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== Scripts ========== -->
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>

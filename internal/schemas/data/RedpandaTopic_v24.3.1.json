@@ -1,0 +1,21 @@
+{
+  "crd": "topics.cluster.redpanda.com",
+  "kind": "RedpandaTopic",
+  "group": "cluster.redpanda.com",
+  "apiVersion": "v1alpha1",
+  "operatorVersion": "v24.3.1",
+  "sourceURL": "https://raw.githubusercontent.com/redpanda-data/redpanda-operator/v24.3.1/config/crd/bases/cluster.redpanda.com_topics.yaml",
+  "fetched": "2026-03-29T00:00:00Z",
+  "fields": [
+    { "path": "spec.partitions", "type": "integer", "description": "Number of partitions to create for this topic. More partitions = more parallelism and higher throughput, but also more memory and file handles on each broker. Cannot be decreased after creation.", "default": "1" },
+    { "path": "spec.replicationFactor", "type": "integer", "description": "Number of replicas for each partition. Must be <= number of brokers. 1 = no redundancy (dev only), 3 = production standard. Higher values increase durability but proportionally increase storage usage.", "default": "1" },
+    { "path": "spec.overwriteTopicName", "type": "string", "description": "Override the Kafka topic name. If unset, the topic name defaults to the Kubernetes resource metadata.name. Use this when the desired topic name contains characters invalid in k8s resource names (e.g. dots, uppercase)." },
+    { "path": "spec.kafkaApiSpec.brokers", "type": "array", "description": "List of Kafka broker addresses (host:port) the operator uses to manage this topic. Typically the headless Service DNS name, e.g. ['redpanda-0.redpanda.redpanda.svc.cluster.local:9093']." },
+    { "path": "spec.kafkaApiSpec.tls.enabled", "type": "boolean", "description": "Enable TLS when the operator connects to Kafka brokers to manage this topic.", "default": "false" },
+    { "path": "spec.kafkaApiSpec.tls.caSecretRef.name", "type": "string", "description": "Name of the Kubernetes Secret containing the CA certificate used to verify broker TLS certificates." },
+    { "path": "spec.kafkaApiSpec.sasl.enabled", "type": "boolean", "description": "Enable SASL authentication when the operator connects to Kafka brokers.", "default": "false" },
+    { "path": "spec.kafkaApiSpec.sasl.mechanism", "type": "string", "description": "SASL mechanism for the operator's Kafka connection.", "enum": ["SCRAM-SHA-256", "SCRAM-SHA-512"] },
+    { "path": "spec.kafkaApiSpec.sasl.secretRef.name", "type": "string", "description": "Name of the Secret containing 'username' and 'password' keys for the operator's Kafka authentication." },
+    { "path": "spec.topicConfiguration", "type": "object", "description": "Topic-level Kafka configuration overrides as key-value string pairs. Common keys: retention.ms (how long to keep messages), max.message.bytes (max message size), cleanup.policy (delete or compact), min.insync.replicas (min replicas for acks=all). Values must be strings." }
+  ]
+}
