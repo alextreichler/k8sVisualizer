@@ -40,6 +40,7 @@ func NewRouter(s *store.ClusterStore, broker *SSEBroker, staticFS fs.FS, cfg Con
 	mux.HandleFunc("/api/simulate/failure", h.HandleSimulateFailure)
 	mux.HandleFunc("/api/simulate/rolling-update", h.HandleSimulateRollingUpdate)
 	mux.HandleFunc("/api/simulate/uninstall", h.HandleSimulateUninstall)
+	mux.HandleFunc("/api/simulate/delete-namespace", h.HandleSimulateDeleteNamespace)
 	mux.HandleFunc("/api/simulate/helm-apply", h.HandleSimulateHelmApply)
 	mux.HandleFunc("/api/simulate/reset", h.HandleSimulateReset)
 

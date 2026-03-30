@@ -40,7 +40,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 		"cm-redpanda", "secret-redpanda-users",
 		"sts-redpanda", "cr-redpanda",
 		"pod-redpanda-operator", "rs-redpanda-operator", "deploy-redpanda-operator",
-		"ns-redpanda", "ns-redpanda-system",
+		"ns-redpanda",
 		// post-install job and cluster config cm (Layer 3)
 		"cm-redpanda-cluster-config", "job-post-install",
 		// flux resources
@@ -59,11 +59,11 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 	step(3, 600*time.Millisecond, `Update complete. ⎈Happy Helming!⎈  — "redpanda" repo ready`, nil)
 
 	// ── Phase 2: helm install redpanda-operator ───────────────────────────
-	step(4, 300*time.Millisecond, "$ helm install redpanda-operator redpanda/redpanda-operator -n redpanda-system --create-namespace", nil)
+	step(4, 300*time.Millisecond, "$ helm install redpanda-operator redpanda/redpanda-operator -n redpanda --create-namespace", nil)
 
-	nsSystem := node("ns-redpanda-system", models.KindNamespace, "v1", "redpanda-system", "", nil, spec(models.ConfigMapSpec{}))
-	step(5, 400*time.Millisecond, "+ namespace/redpanda-system created", func() {
-		s.Add(nsSystem)
+	nsRedpanda := node("ns-redpanda", models.KindNamespace, "v1", "redpanda", "", nil, spec(models.ConfigMapSpec{}))
+	step(5, 400*time.Millisecond, "+ namespace/redpanda created  (operator and cluster share this namespace — cross-namespace support added in v2.x)", func() {
+		s.Add(nsRedpanda)
 	})
 
 	// CRDs — log-only (schema definitions, not instances; shown on step, not as graph nodes)
@@ -71,11 +71,11 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 	step(7, 200*time.Millisecond, "+ customresourcedefinition.apiextensions.k8s.io/consoles.redpanda.com created", nil)
 
 	// RBAC — log-only (shows what permissions the operator gets)
-	step(8, 300*time.Millisecond, "+ serviceaccount/redpanda-operator created  (namespace: redpanda-system)", nil)
+	step(8, 300*time.Millisecond, "+ serviceaccount/redpanda-operator created  (namespace: redpanda)", nil)
 	step(9, 200*time.Millisecond, "+ clusterrole.rbac.authorization.k8s.io/redpanda-operator created  (get/list/watch/create/update/delete StatefulSets, Services, PVCs…)", nil)
 	step(10, 200*time.Millisecond, "+ clusterrolebinding.rbac.authorization.k8s.io/redpanda-operator created  (binds SA → ClusterRole)", nil)
 
-	operatorDeploy := node("deploy-redpanda-operator", models.KindDeployment, "apps/v1", "redpanda-operator", "redpanda-system",
+	operatorDeploy := node("deploy-redpanda-operator", models.KindDeployment, "apps/v1", "redpanda-operator", "redpanda",
 		labels("app.kubernetes.io/name", "redpanda-operator"),
 		spec(models.DeploymentSpec{Replicas: 1, Selector: map[string]string{"app.kubernetes.io/name": "redpanda-operator"}}))
 	step(11, 500*time.Millisecond, "+ deployment.apps/redpanda-operator created", func() {
@@ -84,7 +84,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 		s.AddEdge(edge(operatorDeploy.ID, apiServerID, models.EdgeWatches, "informer"))
 	})
 
-	operatorRS := node("rs-redpanda-operator", models.KindReplicaSet, "apps/v1", "redpanda-operator-rs", "redpanda-system",
+	operatorRS := node("rs-redpanda-operator", models.KindReplicaSet, "apps/v1", "redpanda-operator-rs", "redpanda",
 		labels("app.kubernetes.io/name", "redpanda-operator"),
 		spec(models.ReplicaSetSpec{Replicas: 1, Selector: map[string]string{"app.kubernetes.io/name": "redpanda-operator"}, OwnerRef: operatorDeploy.ID}))
 	step(12, 400*time.Millisecond, "  ↳ replicaset/redpanda-operator-rs spawned", func() {
@@ -124,12 +124,8 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 	step(16, 500*time.Millisecond, "Operator ready — watching for Redpanda CRs via Informer (ListWatch on redpandas.cluster.redpanda.com)", nil)
 
 	// ── Phase 3: helm install redpanda ─────────────────────────────────────
-	step(17, 300*time.Millisecond, "$ helm install redpanda redpanda/redpanda -n redpanda --create-namespace", nil)
-
-	nsRedpanda := node("ns-redpanda", models.KindNamespace, "v1", "redpanda", "", nil, spec(models.ConfigMapSpec{}))
-	step(18, 300*time.Millisecond, "+ namespace/redpanda created", func() {
-		s.Add(nsRedpanda)
-	})
+	step(17, 300*time.Millisecond, "$ helm install redpanda redpanda/redpanda -n redpanda", nil)
+	step(18, 200*time.Millisecond, "namespace/redpanda already exists — cluster resources will be installed alongside the operator", nil)
 
 	operatorVer := "v2.3.6-24.3.1"
 	if useFlux {
@@ -137,24 +133,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 	}
 	redpandaCR := node("cr-redpanda", models.KindCustomResource, "cluster.redpanda.com/v1alpha2", "redpanda", "redpanda",
 		labels("app.kubernetes.io/name", "redpanda", "app.kubernetes.io/managed-by", "redpanda-operator"),
-		spec(models.ConfigMapSpec{Data: map[string]string{
-			"apiVersion": "cluster.redpanda.com/v1alpha2",
-			"kind":       "Redpanda",
-			"chartRef.chartVersion": "v5.10.1",
-			"chartRef.useFlux": fmt.Sprintf("%v", useFlux),
-			"clusterSpec.statefulset.replicas": "3",
-			"clusterSpec.storage.persistentVolume.size": "20Gi",
-			"clusterSpec.auth.sasl.enabled": "true",
-			"clusterSpec.auth.sasl.mechanism": "SCRAM-SHA-512",
-			"clusterSpec.listeners.kafka.port": "9092",
-			"clusterSpec.listeners.schemaRegistry.port": "8081",
-			"clusterSpec.listeners.pandaproxy.port": "8082",
-			"clusterSpec.resources.cpu.cores": "1",
-			"clusterSpec.resources.memory.container.max": "2Gi",
-			"clusterSpec.image.tag": "v24.3.1",
-			"clusterSpec.rackAwareness.enabled": "false",
-			"clusterSpec.console.enabled": "true",
-		}}))
+		spec(models.RedpandaClusterSpec{Replicas: 3, Version: "v24.3.1"}))
 	step(19, 500*time.Millisecond, "+ redpanda.cluster.redpanda.com/redpanda created  (CR applied — operator Informer will detect this)", func() {
 		s.Add(redpandaCR)
 		s.AddEdge(edge(operatorDeploy.ID, redpandaCR.ID, models.EdgeWatches, "reconcile"))
@@ -1094,7 +1073,7 @@ func redpandaOperatorPod(id, name, ownerRef string) *models.Node {
 			{Name: "manager", Image: "docker.redpanda.com/redpandadata/redpanda-operator:v24.3.0", Role: "main"},
 		},
 	}
-	n := node(id, models.KindPod, "v1", name, "redpanda-system",
+	n := node(id, models.KindPod, "v1", name, "redpanda",
 		map[string]string{"app.kubernetes.io/name": "redpanda-operator"}, spec(ps))
 	n.Status = statusJSON(map[string]string{"phase": string(models.PodRunning)})
 	n.SimPhase = string(models.PodRunning)

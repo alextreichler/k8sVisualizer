@@ -393,7 +393,8 @@ func (h *Handlers) HandleSimulateRollingUpdate(w http.ResponseWriter, r *http.Re
 
 // HandleSimulateUninstall handles POST /api/simulate/uninstall.
 // Body: {"release": "redpanda"} or {"release": "redpanda-operator"}
-// Deletes all resources in the release's namespace, simulating `helm uninstall`.
+// Deletes only the resources belonging to that Helm release, simulating `helm uninstall`.
+// The shared namespace and other releases are left intact.
 func (h *Handlers) HandleSimulateUninstall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -408,14 +409,35 @@ func (h *Handlers) HandleSimulateUninstall(w http.ResponseWriter, r *http.Reques
 	}
 
 	switch body.Release {
-	case "redpanda":
-		store.DeleteNamespace(h.store, "redpanda")
-	case "redpanda-operator":
-		store.DeleteNamespace(h.store, "redpanda-system")
+	case "redpanda", "redpanda-operator":
+		store.UninstallRelease(h.store, body.Release)
 	default:
 		writeError(w, "unknown release: "+body.Release, http.StatusBadRequest)
 		return
 	}
 
 	writeJSON(w, map[string]any{"uninstalled": true, "release": body.Release}, http.StatusOK)
+}
+
+// HandleSimulateDeleteNamespace handles POST /api/simulate/delete-namespace.
+// Body: {"namespace": "redpanda"}
+// Deletes all resources in the namespace, simulating `kubectl delete namespace <name>`.
+func (h *Handlers) HandleSimulateDeleteNamespace(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Namespace string `json:"namespace"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Namespace == "" {
+		writeError(w, "namespace is required", http.StatusBadRequest)
+		return
+	}
+	store.DeleteNamespace(h.store, body.Namespace)
+	writeJSON(w, map[string]any{"deleted": true, "namespace": body.Namespace}, http.StatusOK)
 }

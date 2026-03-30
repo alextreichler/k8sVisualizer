@@ -46,6 +46,7 @@ export const api = {
   unbindPVC: (pvcID) => request('POST', '/api/simulate/pvc-unbind', { pvcID }),
   runScenario: (name, opts = {}) => request('POST', '/api/simulate/scenario', { name, ...opts }),
   uninstall: (release) => request('POST', '/api/simulate/uninstall', { release }),
+  deleteNamespace: (namespace) => request('POST', '/api/simulate/delete-namespace', { namespace }),
   bootstrap: (action, opts = {}) => request('POST', '/api/simulate/bootstrap', { action, ...opts }),
   simulateFailure: (type, resourceID) => request('POST', '/api/simulate/failure', { type, resourceID }),
   rollingUpdate: () => request('POST', '/api/simulate/rolling-update', {}),

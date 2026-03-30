@@ -159,39 +159,35 @@ func LoadSampleState(s *ClusterStore, version string) {
 // loadRedpanda adds a Redpanda cluster deployed via Helm + Operator.
 // Layout mirrors the real resource graph from redpanda-operator source:
 //
-//	redpanda-system: operator Deployment → ReplicaSet → Pod
-//	redpanda:        Redpanda CR → StatefulSet → Pods (3 brokers)
-//	                 each Pod → PVC → PV (persistent storage)
-//	                 headless Service + external NodePort Service → Pods
-//	                 ConfigMap + Secret (SASL users) mounted by Pods
+//	redpanda: operator Deployment → ReplicaSet → Pod (same namespace as cluster)
+//	          Redpanda CR → StatefulSet → Pods (3 brokers)
+//	          each Pod → PVC → PV (persistent storage)
+//	          headless Service + external NodePort Service → Pods
+//	          ConfigMap + Secret (SASL users) mounted by Pods
 func loadRedpanda(s *ClusterStore, apiServerID string) {
-	// ===== redpanda-system namespace — the operator =====
-	nsRedpandaSystem := node("ns-redpanda-system", models.KindNamespace, "v1", "redpanda-system", "", nil, spec(models.ConfigMapSpec{}))
-	s.Add(nsRedpandaSystem)
+	// ===== redpanda namespace — operator and cluster share one namespace =====
+	nsRedpanda := node("ns-redpanda", models.KindNamespace, "v1", "redpanda", "", nil, spec(models.ConfigMapSpec{}))
+	s.Add(nsRedpanda)
 
-	operatorDeploy := node("deploy-redpanda-operator", models.KindDeployment, "apps/v1", "redpanda-operator", "redpanda-system",
+	operatorDeploy := node("deploy-redpanda-operator", models.KindDeployment, "apps/v1", "redpanda-operator", "redpanda",
 		labels("app.kubernetes.io/name", "redpanda-operator", "app.kubernetes.io/component", "operator"),
 		spec(models.DeploymentSpec{Replicas: 1, Selector: map[string]string{"app.kubernetes.io/name": "redpanda-operator"}}))
 	operatorDeploy.Status = statusJSON(models.DeploymentStatus{Replicas: 1, ReadyReplicas: 1, AvailableReplicas: 1})
 	s.Add(operatorDeploy)
 
-	operatorRS := node("rs-redpanda-operator", models.KindReplicaSet, "apps/v1", "redpanda-operator-rs", "redpanda-system",
+	operatorRS := node("rs-redpanda-operator", models.KindReplicaSet, "apps/v1", "redpanda-operator-rs", "redpanda",
 		labels("app.kubernetes.io/name", "redpanda-operator"),
 		spec(models.ReplicaSetSpec{Replicas: 1, Selector: map[string]string{"app.kubernetes.io/name": "redpanda-operator"}, OwnerRef: operatorDeploy.ID}))
 	s.Add(operatorRS)
 	s.AddEdge(edge(operatorDeploy.ID, operatorRS.ID, models.EdgeOwns, ""))
 
-	operatorPod := podNode("pod-redpanda-operator", "redpanda-operator-abc12", "redpanda-system", "redpanda-operator",
+	operatorPod := podNode("pod-redpanda-operator", "redpanda-operator-abc12", "redpanda", "redpanda-operator",
 		map[string]string{"app.kubernetes.io/name": "redpanda-operator"}, operatorRS.ID, nil, nil, nil)
 	s.Add(operatorPod)
 	s.AddEdge(edge(operatorRS.ID, operatorPod.ID, models.EdgeOwns, ""))
 
 	// Operator watches kube-apiserver for Redpanda CR changes (Informer/ListWatch)
 	s.AddEdge(edge(operatorDeploy.ID, apiServerID, models.EdgeWatches, "informer"))
-
-	// ===== redpanda namespace — the cluster =====
-	nsRedpanda := node("ns-redpanda", models.KindNamespace, "v1", "redpanda", "", nil, spec(models.ConfigMapSpec{}))
-	s.Add(nsRedpanda)
 
 	// The Redpanda CR — user creates this, operator reconciles it into a StatefulSet
 	redpandaCR := node("cr-redpanda", models.KindCustomResource, "cluster.redpanda.com/v1alpha2", "redpanda", "redpanda",

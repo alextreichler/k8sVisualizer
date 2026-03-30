@@ -113,6 +113,35 @@ func ScaleDeployment(s *ClusterStore, deployID string, target int) error {
 	return nil
 }
 
+// UninstallRelease deletes the specific resources belonging to a Helm release.
+// This mirrors `helm uninstall <release>` — only the release's own objects are
+// removed; the shared namespace and other releases remain intact.
+func UninstallRelease(s *ClusterStore, release string) {
+	var ids []string
+	switch release {
+	case "redpanda":
+		ids = []string{
+			"cr-redpanda", "sts-redpanda",
+			"pod-redpanda-0", "pod-redpanda-1", "pod-redpanda-2",
+			"pvc-redpanda-0", "pvc-redpanda-1", "pvc-redpanda-2",
+			"pv-redpanda-0", "pv-redpanda-1", "pv-redpanda-2",
+			"svc-redpanda-headless", "svc-redpanda-external",
+			"cm-redpanda", "secret-redpanda-users",
+			"cm-redpanda-cluster-config", "job-post-install",
+			"helmrepo-redpanda", "helmrelease-redpanda",
+			"cr-topic-transactions", "cr-topic-audit-log",
+			"cr-user-admin", "cr-schema-avro",
+		}
+	case "redpanda-operator":
+		ids = []string{
+			"deploy-redpanda-operator", "rs-redpanda-operator", "pod-redpanda-operator",
+		}
+	}
+	for _, id := range ids {
+		s.Delete(id)
+	}
+}
+
 // DeleteNamespace deletes every node whose namespace matches ns.
 // Cascades to edges automatically via s.Delete.
 func DeleteNamespace(s *ClusterStore, ns string) {

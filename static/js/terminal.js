@@ -332,11 +332,18 @@ export class Terminal {
     }
   }
 
-  // kubectl delete pod <name> [-n <ns>]
+  // kubectl delete <kind> <name> [-n <ns>]
+  // kubectl delete namespace <name>  — deletes all resources in the namespace
   _kubectlDelete(args) {
-    const { ns, name } = this._parseDescribeArgs(args);
+    const { resource, ns, name } = this._parseDescribeArgs(args);
     if (!name) {
       this._println('Usage: kubectl delete <kind> <name> [-n <ns>]', 'term-error');
+      return;
+    }
+    if (resource === 'namespace' || resource === 'ns') {
+      api.deleteNamespace(name)
+        .then(() => this._println(`namespace "${name}" deleted`, 'term-prompt'))
+        .catch(err => this._println(`Error: ${err.message}`, 'term-error'));
       return;
     }
     const node = this._findNode(name, ns);
@@ -450,13 +457,11 @@ export class Terminal {
     const releases = [];
     const nodes = Array.from(this._store.nodes.values());
 
-    const hasOperator = nodes.some(n => n.metadata?.namespace === 'redpanda-system');
+    const hasOperator = nodes.some(n => n.id === 'deploy-redpanda-operator');
     const hasRedpanda = nodes.some(n => n.metadata?.namespace === 'redpanda' && n.kind === 'StatefulSet');
 
-    if (!nsFlag || nsFlag === 'redpanda-system') {
-      if (hasOperator) releases.push({ name: 'redpanda-operator', ns: 'redpanda-system', chart: 'redpanda/operator', status: 'deployed' });
-    }
     if (!nsFlag || nsFlag === 'redpanda') {
+      if (hasOperator) releases.push({ name: 'redpanda-operator', ns: 'redpanda', chart: 'redpanda/operator', status: 'deployed' });
       if (hasRedpanda) releases.push({ name: 'redpanda', ns: 'redpanda', chart: 'redpanda/redpanda', status: 'deployed' });
     }
 
@@ -521,19 +526,22 @@ export class Terminal {
       return;
     }
     const nodes = Array.from(this._store.nodes.values());
-    const nsMap = { 'redpanda-operator': 'redpanda-system', redpanda: 'redpanda' };
-    const ns = nsMap[release];
-    if (!ns) {
+    if (release !== 'redpanda' && release !== 'redpanda-operator') {
       this._println(`Error: release "${release}" not found`, 'term-error');
       return;
     }
-    const count = nodes.filter(n => n.metadata?.namespace === ns).length;
-    if (count === 0) {
-      this._println(`Error: release "${release}" not found (no resources in namespace ${ns})`, 'term-error');
+    const markerID = release === 'redpanda-operator' ? 'deploy-redpanda-operator' : 'sts-redpanda';
+    if (!nodes.some(n => n.id === markerID)) {
+      this._println(`Error: release "${release}" not found`, 'term-error');
       return;
     }
+    const releaseIDs = release === 'redpanda-operator'
+      ? ['deploy-redpanda-operator', 'rs-redpanda-operator', 'pod-redpanda-operator']
+      : ['cr-redpanda', 'sts-redpanda', 'svc-redpanda-headless', 'svc-redpanda-external',
+         'cm-redpanda', 'secret-redpanda-users', 'pod-redpanda-0', 'pod-redpanda-1', 'pod-redpanda-2'];
+    const count = releaseIDs.filter(id => nodes.some(n => n.id === id)).length;
     this._println(`NAME: ${release}`, 'term-line');
-    this._println(`NAMESPACE: ${ns}`, 'term-line');
+    this._println(`NAMESPACE: redpanda`, 'term-line');
     this._println(`STATUS: deployed`, 'term-prompt');
     this._println(`RESOURCES: ${count} objects`, 'term-line');
   }
@@ -544,7 +552,7 @@ export class Terminal {
     const cmds = [
       ['kubectl get', 'pods|svc|deployments|statefulsets|pvc|pv|all [-n <ns>] [-A]'],
       ['kubectl describe', '<kind> <name> [-n <ns>]'],
-      ['kubectl delete', '<kind> <name> [-n <ns>]'],
+      ['kubectl delete', '<kind> <name> [-n <ns>]  |  namespace <name>'],
       ['kubectl scale', '(sts|deployment)/<name> --replicas=N [-n <ns>]'],
       ['kubectl logs', '<pod> [-n <ns>]'],
       ['', ''],
