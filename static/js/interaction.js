@@ -13,10 +13,14 @@ export class InteractionHandler {
     this._panning = false;
     this._panStart = null;
     this._onNodeClick = null;
+    this._onNodePin   = null;
+    this._onNodeUnpin = null;
     this._bind();
   }
 
-  onNodeClick(cb) { this._onNodeClick = cb; }
+  onNodeClick(cb)  { this._onNodeClick  = cb; }
+  onNodePin(cb)    { this._onNodePin    = cb; }
+  onNodeUnpin(cb)  { this._onNodeUnpin  = cb; }
 
   setTransform(tx, ty, scale) {
     this._tx = tx; this._ty = ty; this._scale = scale;
@@ -97,18 +101,37 @@ export class InteractionHandler {
 
     svg.addEventListener('pointerup', (e) => {
       if (this._draggingNode) {
-        this._sim.unpinNode(this._draggingNode);
-        // Detect click: pointer barely moved
-        if (this._dragStart && this._onNodeClick) {
-          const dx = Math.abs(e.clientX - this._dragStart.x);
-          const dy = Math.abs(e.clientY - this._dragStart.y);
-          if (dx < 5 && dy < 5) this._onNodeClick(this._draggingNode);
+        const id = this._draggingNode;
+        const dx = this._dragStart ? Math.abs(e.clientX - this._dragStart.x) : 0;
+        const dy = this._dragStart ? Math.abs(e.clientY - this._dragStart.y) : 0;
+        const wasDrag = dx > 5 || dy > 5;
+
+        if (wasDrag) {
+          // Keep the pin — node stays where the user dropped it.
+          // Fire callback so the position can be persisted.
+          const svgPos = this._toSVGCoords(e);
+          this._onNodePin?.(id, svgPos.x, svgPos.y);
+        } else {
+          // Was a click: release the temporary drag pin and fire click.
+          this._sim.unpinNode(id);
+          this._onNodeClick?.(id);
         }
         this._draggingNode = null;
         this._dragStart = null;
       }
       this._panning = false;
       this._panStart = null;
+    });
+
+    // Double-click a node to unpin it and let the layout reclaim it.
+    svg.addEventListener('dblclick', (e) => {
+      const nodeEl = e.target.closest('.node');
+      if (!nodeEl) return;
+      const id = nodeEl._nodeID;
+      if (!id) return;
+      this._sim.unpinNode(id);
+      this._onNodeUnpin?.(id);
+      e.stopPropagation();
     });
   }
 

@@ -116,6 +116,22 @@ var Features = []FeatureInfo{
 	// CSIDriver, CSINode
 	{Kind: "CSIDriver", APIGroup: "storage.k8s.io/v1", StableIn: "1.18"},
 	{Kind: "CSINode",   APIGroup: "storage.k8s.io/v1", StableIn: "1.17"},
+
+	// Dynamic Resource Allocation (DRA)
+	// v1alpha1: 1.26 only — replaced by v1alpha2 in 1.27 (breaking change)
+	{Kind: "ResourceClaim",         APIGroup: "resource.k8s.io/v1alpha1", AlphaIn: "1.26", RemovedIn: "1.27", Notes: "Initial DRA alpha; replaced by v1alpha2 in 1.27"},
+	{Kind: "ResourceClaimTemplate", APIGroup: "resource.k8s.io/v1alpha1", AlphaIn: "1.26", RemovedIn: "1.27", Notes: "Initial DRA alpha; replaced by v1alpha2 in 1.27"},
+	// v1alpha2: 1.27–1.31, removed in 1.32 when v1beta1 stabilised
+	{Kind: "ResourceClaim",         APIGroup: "resource.k8s.io/v1alpha2", AlphaIn: "1.27", RemovedIn: "1.32", Notes: "Graduated to resource.k8s.io/v1beta1 in 1.31"},
+	{Kind: "ResourceClaimTemplate", APIGroup: "resource.k8s.io/v1alpha2", AlphaIn: "1.27", RemovedIn: "1.32", Notes: "Graduated to resource.k8s.io/v1beta1 in 1.31"},
+	// v1beta1: beta in 1.31
+	{Kind: "ResourceClaim",         APIGroup: "resource.k8s.io/v1beta1",  BetaIn: "1.31", Notes: "Dynamic Resource Allocation — request hardware/accelerators"},
+	{Kind: "ResourceClaimTemplate", APIGroup: "resource.k8s.io/v1beta1",  BetaIn: "1.31", Notes: "Template for per-pod ResourceClaims"},
+
+	// VolumeAttributesClass — 1.29+
+	// v1alpha1 is deprecated (not removed) when v1beta1 lands in 1.32; removal expected in a later release
+	{Kind: "VolumeAttributesClass", APIGroup: "storage.k8s.io/v1alpha1", AlphaIn: "1.29", Notes: "Deprecated in 1.32; migrate to storage.k8s.io/v1beta1"},
+	{Kind: "VolumeAttributesClass", APIGroup: "storage.k8s.io/v1beta1",  BetaIn: "1.32", Notes: "Modify volume QoS/performance attributes without re-provisioning"},
 }
 
 // AvailableKinds returns all FeatureInfo entries available in the given version.

@@ -150,6 +150,8 @@ func (h *Handlers) HandleSimulateScenario(w http.ResponseWriter, r *http.Request
 		run(func() { store.RunHPAScenario(h.store, "cp-apiserver", onStep) })
 	case "node-drain":
 		run(func() { store.RunNodeDrainScenario(h.store, "cp-apiserver", onStep) })
+	case "canary":
+		run(func() { store.RunCanaryScenario(h.store, onStep) })
 	default:
 		h.decScenarios()
 		writeError(w, "unknown scenario: "+body.Name, http.StatusBadRequest)
@@ -353,6 +355,10 @@ func (h *Handlers) HandleSimulateFailure(w http.ResponseWriter, r *http.Request)
 		runFn = func() error { return store.SimulateNodeNotReady(h.store, body.ResourceID, onStep) }
 	case "liveness-probe":
 		runFn = func() error { return store.SimulateLivenessProbeFailure(h.store, body.ResourceID, onStep) }
+	case "readiness-probe":
+		runFn = func() error { return store.SimulateReadinessProbeFailure(h.store, body.ResourceID, onStep) }
+	case "kubelet-recovery":
+		runFn = func() error { return store.SimulateKubeletRecovery(h.store, onStep) }
 	default:
 		writeError(w, "unknown failure type: "+body.Type, http.StatusBadRequest)
 		return

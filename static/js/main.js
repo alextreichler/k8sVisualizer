@@ -30,10 +30,76 @@ const interaction = new InteractionHandler(svg, sim, (tx, ty, scale) => {
   graph.setViewTransform(tx, ty, scale);
 });
 
+// ---- Node pin persistence (localStorage) ----
+const PINS_KEY = 'k8svis_node_pins';
+
+function loadPins() {
+  try { return JSON.parse(localStorage.getItem(PINS_KEY) || '{}'); } catch { return {}; }
+}
+function savePins(pins) {
+  localStorage.setItem(PINS_KEY, JSON.stringify(pins));
+}
+
+// ---- Namespace offset persistence (localStorage) ----
+const NS_OFFSETS_KEY = 'k8svis_ns_offsets';
+
+function loadNsOffsets() {
+  try { return JSON.parse(localStorage.getItem(NS_OFFSETS_KEY) || '{}'); } catch { return {}; }
+}
+function saveNsOffsets(offsets) {
+  localStorage.setItem(NS_OFFSETS_KEY, JSON.stringify(offsets));
+}
+function restoreNsOffsets() {
+  const offsets = loadNsOffsets();
+  for (const [ns, off] of Object.entries(offsets)) {
+    sim.setNsOffset(ns, off.dx, off.dy);
+    graph.setNsOffset(ns, off.dx, off.dy);
+  }
+}
+function restorePins() {
+  const pins = loadPins();
+  for (const [id, pos] of Object.entries(pins)) {
+    if (sim.hasNode(id)) sim.pinNode(id, pos.x, pos.y);
+  }
+}
+function applyPinnedClasses() {
+  const pinned = sim.getPinnedPositions();
+  for (const id of store.nodes.keys()) {
+    graph.markPinned(id, id in pinned);
+  }
+}
+function cleanStalePins() {
+  const pins = loadPins();
+  let changed = false;
+  for (const id of Object.keys(pins)) {
+    if (!sim.hasNode(id)) { delete pins[id]; changed = true; }
+  }
+  if (changed) savePins(pins);
+}
+
+interaction.onNodePin((id, x, y) => {
+  const pins = loadPins();
+  pins[id] = { x, y };
+  savePins(pins);
+  graph.markPinned(id, true);
+});
+
+interaction.onNodeUnpin((id) => {
+  const pins = loadPins();
+  delete pins[id];
+  savePins(pins);
+  graph.markPinned(id, false);
+});
+
 const controls = new Controls({ store, graph, simulation: sim, interaction });
 
 // Wire namespace zone drag → layout offsets
-graph.onNsOffsetChange((ns, dx, dy) => sim.setNsOffset(ns, dx, dy));
+graph.onNsOffsetChange((ns, dx, dy) => {
+  sim.setNsOffset(ns, dx, dy);
+  const offsets = loadNsOffsets();
+  offsets[ns] = { dx, dy };
+  saveNsOffsets(offsets);
+});
 
 // Wire Ingress traffic simulation
 panel.onSimulateTraffic((ingressID) => graph.animateTrafficFrom(ingressID));
@@ -60,9 +126,13 @@ store.subscribe((type, data) => {
   const edges = store.visibleEdges();
 
   if (type === 'snapshot') {
-    // Full reload: rebuild simulation
+    // Full reload: rebuild simulation, then restore any persisted pins
     sim.load(nodes, edges);
+    restorePins();
+    restoreNsOffsets();
     graph.render(nodes, edges);
+    applyPinnedClasses();
+    cleanStalePins();
     // Positions are computed instantly — fit immediately
     interaction.zoomToFit(sim.getPositions());
     return;
@@ -72,6 +142,9 @@ store.subscribe((type, data) => {
     // Incremental node change: update graph, patch simulation
     graph.render(nodes, edges);
     sim.load(nodes, edges);
+    restorePins();
+    applyPinnedClasses();
+    cleanStalePins();
     sim.reheat(0.3);
     return;
   }
@@ -79,6 +152,8 @@ store.subscribe((type, data) => {
   if (type === 'edge') {
     graph.render(nodes, edges);
     sim.load(nodes, edges);
+    restorePins();
+    applyPinnedClasses();
     sim.reheat(0.2);
     return;
   }
@@ -401,9 +476,11 @@ function resetSidebarUI() {
   if (certBtn2) { certBtn2.disabled = false; certBtn2.textContent = '① Install cert-manager';              certBtn2.style.background = ''; }
   if (rpdBtn2)  { rpdBtn2.disabled  = false; rpdBtn2.textContent  = '② Install redpanda (operator + chart)'; rpdBtn2.style.background = ''; }
 
-  // Reset any user-dragged namespace positions
+  // Reset any user-dragged namespace positions and node pins
   sim.resetNsOffsets();
   graph.resetNsOffsets();
+  savePins({});
+  saveNsOffsets({});
 
   // Re-apply cluster-ready gating (cluster is now empty after reset)
   updateScenarioGating();

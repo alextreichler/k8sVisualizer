@@ -51,6 +51,10 @@ const (
 	KindClusterRoleBinding = "ClusterRoleBinding"
 	KindNetworkPolicy = "NetworkPolicy"
 	KindResourceQuota = "ResourceQuota"
+
+	KindLimitRange    = "LimitRange"
+	KindPriorityClass = "PriorityClass"
+	KindEndpointSlice = "EndpointSlice"
 )
 
 // PodPhase mirrors corev1.PodPhase
@@ -343,4 +347,37 @@ type ResourceQuotaStatus struct {
 type RedpandaClusterSpec struct {
 	Replicas int    `json:"replicas"`
 	Version  string `json:"version,omitempty"`
+}
+
+type LimitRangeSpec struct {
+	Limits []LimitRangeItem `json:"limits,omitempty"`
+}
+type LimitRangeItem struct {
+	Type           string            `json:"type"` // "Container", "Pod", "PersistentVolumeClaim"
+	Default        map[string]string `json:"default,omitempty"`
+	DefaultRequest map[string]string `json:"defaultRequest,omitempty"`
+	Max            map[string]string `json:"max,omitempty"`
+	Min            map[string]string `json:"min,omitempty"`
+}
+
+type PriorityClassSpec struct {
+	Value         int    `json:"value"`
+	GlobalDefault bool   `json:"globalDefault,omitempty"`
+	Description   string `json:"description,omitempty"`
+}
+
+type EndpointSliceSpec struct {
+	AddressType string          `json:"addressType"` // "IPv4"
+	Endpoints   []SliceEndpoint `json:"endpoints,omitempty"`
+	Ports       []SlicePort     `json:"ports,omitempty"`
+}
+type SliceEndpoint struct {
+	Addresses  []string        `json:"addresses"`
+	Conditions map[string]bool `json:"conditions,omitempty"` // ready, serving, terminating
+	TargetRef  string          `json:"targetRef,omitempty"`  // pod ID
+}
+type SlicePort struct {
+	Name     string `json:"name,omitempty"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
 }

@@ -33,5 +33,26 @@
   animation: flow-dash 0.6s linear infinite;
 }
 
+/* ---- Edge hover tooltip ---- */
+#edge-tooltip {
+  position: fixed;
+  z-index: 200;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text);
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  display: none;
+  max-width: 340px;
+  white-space: normal;
+  line-height: 1.4;
+}
+#edge-tooltip.visible {
+  display: block;
+}
+
 /* ---- Arrowheads (defined in SVG <defs>) ---- */
 /* colors are set via fill on the marker element in graph.js */

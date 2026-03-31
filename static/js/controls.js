@@ -18,6 +18,7 @@ export class Controls {
     this._bindCreateModal();
     this._refreshNamespacePills();
     this._refreshKindFilters();
+    this._refreshEdgeFilters();
     this._refreshStats();
 
     // Re-render namespace pills + stats when store changes
@@ -325,6 +326,51 @@ export class Controls {
       lbl.htmlFor = `kf-${kind}`;
       lbl.textContent = kind;
       item.appendChild(cb);
+      item.appendChild(lbl);
+      container.appendChild(item);
+    }
+  }
+
+  _refreshEdgeFilters() {
+    const container = document.getElementById('edge-filter-list');
+    if (!container) return;
+    // Only populate once — edge types are static
+    if (container.children.length > 0) return;
+
+    const EDGE_TYPES = [
+      'owns', 'selects', 'mounts', 'bound', 'routes', 'scales',
+      'headless', 'watches', 'stores', 'uses', 'binds', 'subject', 'scheduled-on',
+    ];
+    const EDGE_COLORS = {
+      owns: '#4a5a7a', selects: '#7c4dff', mounts: '#26c6da',
+      bound: '#a1887f', routes: '#ff7043', scales: '#f06292',
+      headless: '#3d5afe', watches: '#26a69a', stores: '#ef5350',
+      uses: '#80cbc4', binds: '#ce93d8', subject: '#ba68c8',
+      'scheduled-on': '#78909c',
+    };
+
+    for (const type of EDGE_TYPES) {
+      const item = document.createElement('div');
+      item.className = 'kind-filter-item';
+
+      const dot = document.createElement('span');
+      dot.className = 'edge-filter-dot';
+      dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:50%;background:${EDGE_COLORS[type] || '#888'};flex-shrink:0`;
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = `ef-${type}`;
+      cb.checked = true;
+      cb.addEventListener('change', () => {
+        this._graph.setEdgeTypeVisible(type, cb.checked);
+      });
+
+      const lbl = document.createElement('label');
+      lbl.htmlFor = `ef-${type}`;
+      lbl.textContent = type;
+
+      item.appendChild(cb);
+      item.appendChild(dot);
       item.appendChild(lbl);
       container.appendChild(item);
     }

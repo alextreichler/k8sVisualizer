@@ -3,9 +3,9 @@
 .kind-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -14,8 +14,8 @@
 
 /* ---- Educational description ---- */
 .node-description {
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--text-muted);
   background: var(--bg-panel-2);
   border-left: 3px solid var(--accent);
@@ -68,9 +68,9 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 8px;
+  padding: 2px 9px;
   border-radius: 10px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 .phase-Running     { background: rgba(76,175,130,0.15); color: #4caf82; }
@@ -99,12 +99,12 @@
   color: var(--text-muted);
   width: 44%;
   padding-right: 8px;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .meta-table td:last-child {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   word-break: break-all;
   color: var(--text);
 }
@@ -120,8 +120,8 @@
   background: var(--bg-panel-2);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 2px 7px;
-  font-size: 11px;
+  padding: 2px 8px;
+  font-size: 12px;
   font-family: var(--mono);
   color: var(--text-muted);
 }
@@ -131,7 +131,7 @@
   margin-bottom: 14px;
 }
 .panel-section-title {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -150,12 +150,12 @@
 }
 
 .btn {
-  padding: 4px 10px;
+  padding: 5px 11px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--bg-panel-2);
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
   transition: background 0.15s, border-color 0.15s;
 }
 .btn:hover {
@@ -181,7 +181,7 @@
 .btn-failure {
   border-color: rgba(224,82,82,0.5);
   color: #e07070;
-  font-size: 11px;
+  font-size: 12px;
 }
 .btn-failure:hover {
   border-color: var(--danger);
@@ -198,18 +198,18 @@
   margin-bottom: 12px;
 }
 .failure-callout-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   margin-bottom: 4px;
 }
 .failure-callout-msg {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted);
-  line-height: 1.5;
+  line-height: 1.55;
   margin-bottom: 5px;
 }
 .failure-callout-fix {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--accent);
 }
 .failure-callout-fix code {
@@ -241,9 +241,9 @@
   border-radius: var(--radius);
   padding: 8px 10px;
   margin-bottom: 12px;
-  font-size: 12px;
+  font-size: 13px;
   color: #ff9e80;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 .version-callout.deprecated {
   background: rgba(224,82,82,0.08);
@@ -262,11 +262,11 @@
   border-radius: var(--radius);
   padding: 8px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text);
   overflow-x: auto;
   white-space: pre;
   max-height: 260px;
   overflow-y: auto;
-  line-height: 1.5;
+  line-height: 1.55;
 }

@@ -153,6 +153,18 @@ func LoadSampleState(s *ClusterStore, version string) {
 		s.AddEdge(edge(fmt.Sprintf("pod-kubeproxy-%d", i), workers[i-1].ID, models.EdgeScheduledOn, ""))
 	}
 
+	// LimitRange — default container resource limits in kube-system
+	lr := node("lr-default", models.KindLimitRange, "v1", "default-container-limits", "kube-system",
+		nil, spec(models.LimitRangeSpec{
+			Limits: []models.LimitRangeItem{{
+				Type:           "Container",
+				Default:        map[string]string{"cpu": "500m", "memory": "256Mi"},
+				DefaultRequest: map[string]string{"cpu": "100m", "memory": "64Mi"},
+				Max:            map[string]string{"cpu": "2", "memory": "2Gi"},
+			}},
+		}))
+	s.Add(lr)
+
 	loadRedpanda(s, apiServer.ID)
 }
 

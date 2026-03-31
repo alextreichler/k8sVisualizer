@@ -190,6 +190,9 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 	redpandaSTS := node("sts-redpanda", models.KindStatefulSet, "apps/v1", "redpanda", "redpanda",
 		labels("app.kubernetes.io/name", "redpanda"),
 		spec(models.StatefulSetSpec{Replicas: 3, Selector: map[string]string{"app.kubernetes.io/name": "redpanda"}}))
+	// Mark scenario-managed so the reconciler doesn't race to create pods while the
+	// scenario is still stepping through ordered pod creation.
+	redpandaSTS.Annotations = map[string]string{"k8svisualizer/scenario-managed": "true"}
 	step(26, 400*time.Millisecond, "+ statefulset.apps/redpanda created  [0/3 ready]", func() {
 		s.Add(redpandaSTS)
 		s.AddEdge(edge(redpandaCR.ID, redpandaSTS.ID, models.EdgeOwns, ""))
@@ -278,7 +281,13 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 		})
 	}
 
-	step(46, 400*time.Millisecond, "StatefulSet redpanda: 3/3 ready  (Raft quorum: 3 voters, min-ISR=2)", nil)
+	step(46, 400*time.Millisecond, "StatefulSet redpanda: 3/3 ready  (Raft quorum: 3 voters, min-ISR=2)", func() {
+		// Hand off STS management to the reconciler now that all pods are in place.
+		if sts, ok := s.Get(redpandaSTS.ID); ok {
+			delete(sts.Annotations, "k8svisualizer/scenario-managed")
+			s.Update(sts)
+		}
+	})
 	step(47, 200*time.Millisecond, "Redpanda cluster deployment complete ✓", nil)
 	step(48, 0, "$ rpk cluster info --brokers redpanda-0.redpanda.redpanda.svc.cluster.local:9092", nil)
 
@@ -530,7 +539,7 @@ func RunCertManagerScenario(s *ClusterStore, apiServerID string, onStep func(i, 
 	})
 
 	cmPod := certMgrPod("pod-cert-manager", "cert-manager-def34", cmRS.ID,
-		"controller", "quay.io/jetstack/cert-manager-controller:v1.14.4")
+		"cert-manager", "quay.io/jetstack/cert-manager-controller:v1.14.4")
 	cmPod.SimPhase = string(models.PodPending)
 	step(21, 400*time.Millisecond, "  ↳ pod/cert-manager-def34: Pending — waiting to be scheduled...", func() {
 		s.Add(cmPod)
@@ -1170,4 +1179,170 @@ func RunNodeDrainScenario(s *ClusterStore, apiServerID string, onStep func(i, to
 			}
 		}
 	})
+}
+
+// RunCanaryScenario demonstrates a canary release pattern:
+// a stable Deployment receives 90% of traffic while a canary Deployment
+// receives 10% — both selected by the same Service label selector.
+func RunCanaryScenario(s *ClusterStore, onStep func(i, total int, label string)) {
+	// Wipe previous canary resources
+	for _, id := range []string{
+		"ns-canary", "deploy-stable", "rs-stable",
+		"pod-stable-0", "pod-stable-1", "pod-stable-2",
+		"deploy-canary", "rs-canary", "pod-canary-0",
+		"svc-canary-app", "cm-canary-config",
+	} {
+		s.Delete(id)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	total := 22
+	step := func(i int, delay time.Duration, label string, action func()) {
+		time.Sleep(delay)
+		if action != nil {
+			action()
+		}
+		onStep(i, total, label)
+	}
+
+	step(1, 0, "$ kubectl create namespace canary", func() {
+		ns := node("ns-canary", models.KindNamespace, "v1", "canary", "", nil, spec(models.ConfigMapSpec{}))
+		s.Add(ns)
+	})
+	step(2, 200*time.Millisecond, "Canary pattern: same Service selects both stable + canary pods via shared label app=myapp", nil)
+	step(3, 300*time.Millisecond, "Traffic split = pod ratio: 3 stable pods + 1 canary pod → ~75%/25% split (no Istio needed)", nil)
+
+	// Stable deployment (3 replicas)
+	stableDeploy := node("deploy-stable", models.KindDeployment, "apps/v1", "myapp-stable", "canary",
+		labels("app", "myapp", "track", "stable", "version", "v1.0"),
+		spec(models.DeploymentSpec{Replicas: 3, Selector: map[string]string{"app": "myapp", "track": "stable"}}))
+	step(4, 400*time.Millisecond, "+ deployment/myapp-stable created  (replicas=3, image=myapp:v1.0)", func() {
+		stableDeploy.Status = statusJSON(models.DeploymentStatus{Replicas: 3, ReadyReplicas: 3})
+		s.Add(stableDeploy)
+	})
+
+	stableRS := node("rs-stable", models.KindReplicaSet, "apps/v1", "myapp-stable-rs", "canary",
+		labels("app", "myapp", "track", "stable"),
+		spec(models.ReplicaSetSpec{Replicas: 3, Selector: map[string]string{"app": "myapp", "track": "stable"}, OwnerRef: stableDeploy.ID}))
+	step(5, 300*time.Millisecond, "  ↳ replicaset/myapp-stable-rs created", func() {
+		s.Add(stableRS)
+		s.AddEdge(edge(stableDeploy.ID, stableRS.ID, models.EdgeOwns, ""))
+	})
+
+	// Create 3 stable pods
+	for i := 0; i < 3; i++ {
+		ii := i
+		podID := fmt.Sprintf("pod-stable-%d", ii)
+		p := node(podID, models.KindPod, "v1", fmt.Sprintf("myapp-stable-%d", ii), "canary",
+			labels("app", "myapp", "track", "stable", "version", "v1.0"),
+			spec(models.PodSpec{
+				Phase:    models.PodRunning,
+				OwnerRef: stableRS.ID,
+				Labels:   map[string]string{"app": "myapp", "track": "stable", "version": "v1.0"},
+				Containers: []models.ContainerInfo{{Name: "app", Image: "myapp:v1.0", Role: "main"}},
+			}))
+		p.SimPhase = string(models.PodRunning)
+		p.Status = statusJSON(map[string]string{"phase": "Running"})
+		step(6+ii, 300*time.Millisecond, fmt.Sprintf("  ↳ pod/myapp-stable-%d Running  [v1.0]", ii), func() {
+			s.Add(p)
+			s.AddEdge(edge(stableRS.ID, p.ID, models.EdgeOwns, ""))
+		})
+	}
+
+	// Service selecting all app=myapp pods (both stable and canary)
+	svc := node("svc-canary-app", models.KindService, "v1", "myapp", "canary",
+		labels("app", "myapp"),
+		spec(models.ServiceSpec{
+			Type:     models.ServiceClusterIP,
+			Selector: map[string]string{"app": "myapp"},
+			Ports:    []models.ServicePort{{Name: "http", Protocol: "TCP", Port: 80, TargetPort: 8080}},
+		}))
+	step(9, 400*time.Millisecond, "+ service/myapp created  (selector: app=myapp — will select BOTH stable and canary pods)", func() {
+		s.Add(svc)
+		// Select all stable pods
+		for i := 0; i < 3; i++ {
+			if p, ok := s.Get(fmt.Sprintf("pod-stable-%d", i)); ok {
+				s.AddEdge(edge(svc.ID, p.ID, models.EdgeSelects, ""))
+			}
+		}
+	})
+
+	step(10, 500*time.Millisecond, "Stable version v1.0 serving 100% traffic — ready to deploy canary", nil)
+
+	// Canary deployment (1 replica)
+	canaryDeploy := node("deploy-canary", models.KindDeployment, "apps/v1", "myapp-canary", "canary",
+		labels("app", "myapp", "track", "canary", "version", "v1.1"),
+		spec(models.DeploymentSpec{Replicas: 1, Selector: map[string]string{"app": "myapp", "track": "canary"}}))
+	step(11, 600*time.Millisecond, "$ kubectl apply -f canary-deployment.yaml  (image=myapp:v1.1, replicas=1)", func() {
+		canaryDeploy.Status = statusJSON(models.DeploymentStatus{Replicas: 0, ReadyReplicas: 0})
+		s.Add(canaryDeploy)
+	})
+
+	canaryRS := node("rs-canary", models.KindReplicaSet, "apps/v1", "myapp-canary-rs", "canary",
+		labels("app", "myapp", "track", "canary"),
+		spec(models.ReplicaSetSpec{Replicas: 1, Selector: map[string]string{"app": "myapp", "track": "canary"}, OwnerRef: canaryDeploy.ID}))
+	step(12, 300*time.Millisecond, "  ↳ replicaset/myapp-canary-rs created", func() {
+		s.Add(canaryRS)
+		s.AddEdge(edge(canaryDeploy.ID, canaryRS.ID, models.EdgeOwns, ""))
+	})
+
+	canaryPod := node("pod-canary-0", models.KindPod, "v1", "myapp-canary-0", "canary",
+		labels("app", "myapp", "track", "canary", "version", "v1.1"),
+		spec(models.PodSpec{
+			Phase:    models.PodPending,
+			OwnerRef: canaryRS.ID,
+			Labels:   map[string]string{"app": "myapp", "track": "canary", "version": "v1.1"},
+			Containers: []models.ContainerInfo{{Name: "app", Image: "myapp:v1.1", Role: "main"}},
+		}))
+	canaryPod.SimPhase = string(models.PodPending)
+	step(13, 400*time.Millisecond, "  ↳ pod/myapp-canary-0: Pending", func() {
+		s.Add(canaryPod)
+		s.AddEdge(edge(canaryRS.ID, canaryPod.ID, models.EdgeOwns, ""))
+	})
+
+	canaryPod.SimPhase = string(models.PodRunning)
+	canaryPod.Status = statusJSON(map[string]string{"phase": "Running"})
+	if ps, err := func() (models.PodSpec, error) {
+		var ps models.PodSpec
+		return ps, json.Unmarshal(canaryPod.Spec, &ps)
+	}(); err == nil {
+		ps.Phase = models.PodRunning
+		canaryPod.Spec, _ = json.Marshal(ps)
+	}
+	canaryDeploy.Status = statusJSON(models.DeploymentStatus{Replicas: 1, ReadyReplicas: 1})
+	step(14, 900*time.Millisecond, "  ↳ pod/myapp-canary-0: Running ✓  [v1.1]  — canary is live", func() {
+		s.Update(canaryPod)
+		s.Update(canaryDeploy)
+		// Service now also selects canary pod (app=myapp matches)
+		s.AddEdge(edge(svc.ID, canaryPod.ID, models.EdgeSelects, ""))
+	})
+
+	step(15, 500*time.Millisecond, "Traffic split: 3 stable + 1 canary → 75% v1.0 / 25% v1.1  (kube-proxy round-robins across all 4 endpoints)", nil)
+	step(16, 400*time.Millisecond, "Monitor canary: kubectl logs -l track=canary -f  |  watch error rates", nil)
+	step(17, 800*time.Millisecond, "Canary healthy ✓  — promoting: scale stable down, canary up", func() {
+		// Scale stable to 0 progressively
+		if d, ok := s.Get("deploy-stable"); ok {
+			var dspec models.DeploymentSpec
+			if json.Unmarshal(d.Spec, &dspec) == nil {
+				dspec.Replicas = 0
+				d.Spec, _ = json.Marshal(dspec)
+				s.Update(d)
+			}
+		}
+	})
+	step(18, 600*time.Millisecond, "$ kubectl scale deployment/myapp-stable --replicas=0", nil)
+	step(19, 800*time.Millisecond, "$ kubectl scale deployment/myapp-canary --replicas=3", func() {
+		if d, ok := s.Get("deploy-canary"); ok {
+			var dspec models.DeploymentSpec
+			if json.Unmarshal(d.Spec, &dspec) == nil {
+				dspec.Replicas = 3
+				d.Spec, _ = json.Marshal(dspec)
+				d.Status = statusJSON(models.DeploymentStatus{Replicas: 1, ReadyReplicas: 1})
+				s.Update(d)
+			}
+		}
+	})
+	step(20, 400*time.Millisecond, "Canary promotion complete — v1.1 now handles 100% traffic", nil)
+	step(21, 300*time.Millisecond, "Next step: rename canary deployment to stable, delete old stable", nil)
+	step(22, 200*time.Millisecond, "✓ Canary rollout complete  |  Rollback: kubectl scale canary=0, stable=3", nil)
 }

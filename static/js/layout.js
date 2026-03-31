@@ -4,11 +4,10 @@
 
 // Column X offsets (relative to cx) per namespace
 const NS_X_TARGETS = {
-  'kube-system':     0,
-  'monitoring':   -520,
-  'default':       420,
-  'redpanda-system': 820,
-  'redpanda':     1220,
+  'kube-system':  0,
+  'monitoring':  -520,
+  'default':      420,
+  'redpanda':     820,
 };
 
 // Vertical layer index per resource kind
@@ -161,6 +160,17 @@ export class StaticLayout {
     for (const [id, p] of this._nodes) pos[id] = { x: p.x, y: p.y };
     return pos;
   }
+
+  // Returns only nodes that have been manually pinned by the user.
+  getPinnedPositions() {
+    const pins = {};
+    for (const [id, p] of this._nodes) {
+      if (p.fx !== undefined) pins[id] = { x: p.fx, y: p.fy };
+    }
+    return pins;
+  }
+
+  hasNode(id) { return this._nodes.has(id); }
 
   // --- private ---
 

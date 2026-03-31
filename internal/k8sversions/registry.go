@@ -8,11 +8,11 @@ import "fmt"
 var SupportedVersions = []string{
 	"1.16", "1.17", "1.18", "1.19", "1.20", "1.21",
 	"1.22", "1.23", "1.24", "1.25", "1.26", "1.27",
-	"1.28", "1.29", "1.30",
+	"1.28", "1.29", "1.30", "1.31", "1.32", "1.33",
 }
 
 // DefaultVersion is the version used when none is specified.
-const DefaultVersion = "1.29"
+const DefaultVersion = "1.33"
 
 // IsSupported returns true if the given version string is in SupportedVersions.
 func IsSupported(v string) bool {
@@ -129,6 +129,28 @@ var versionNotes = map[string][]string{
 		"Structured authentication configuration GA",
 		"Pod scheduling readiness GA",
 		"Volume group snapshot alpha",
+	},
+	"1.31": {
+		"AppArmor GA: spec.securityContext.appArmorProfile field (replaces annotation)",
+		"Sidecar containers beta: initContainers with restartPolicy=Always",
+		"PersistentVolume last phase transition time GA",
+		"NodeLogQuery beta",
+		"VolumeAttributesClass alpha (storage.k8s.io/v1alpha1)",
+	},
+	"1.32": {
+		"Dynamic Resource Allocation (DRA) beta: ResourceClaim resource.k8s.io/v1beta1",
+		"Structured authorization configuration GA",
+		"Multiple service CIDR ranges GA",
+		"Job success/completion policy beta",
+		"In-place pod resource resize alpha",
+		"VolumeAttributesClass beta (storage.k8s.io/v1beta1)",
+	},
+	"1.33": {
+		"Sidecar containers GA",
+		"In-place pod resource resize beta",
+		"Job success/completion policy GA",
+		"External JWT signer for ServiceAccount tokens beta",
+		"Storage version migrator beta",
 	},
 }
 

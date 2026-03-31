@@ -1,10 +1,15 @@
 /* ---- Node base ---- */
 .node {
-  cursor: pointer;
+  cursor: grab;
   transition: filter 0.15s;
 }
+.node:active { cursor: grabbing; }
 .node:hover { filter: brightness(1.35) drop-shadow(0 0 6px rgba(255,255,255,0.2)); }
 .node.selected .node-shape { stroke: #fff; stroke-width: 3; filter: drop-shadow(0 0 8px rgba(255,255,255,0.5)); }
+
+/* Pinned nodes get a warm amber glow — double-click to release */
+.node.pinned .node-shape { filter: drop-shadow(0 0 6px rgba(255, 190, 50, 0.65)); }
+.node.pinned:hover .node-shape { filter: drop-shadow(0 0 8px rgba(255, 190, 50, 0.9)); }
 
 /* ---- Shape fills by kind ---- */
 .node-ControlPlaneComponent .node-shape { fill: #2c1a4d; stroke: #b388ff; stroke-width: 2.5; filter: drop-shadow(0 0 4px rgba(179,136,255,0.4)); }
@@ -157,9 +162,11 @@
 [data-theme="light"] .node-ClusterRoleBinding .node-shape  { fill: #fdf4ff; stroke: #9333ea; }
 [data-theme="light"] .node-Node .node-shape                { fill: #f0f9ff; stroke: #0284c7; }
 
-/* Node hover / selected in light theme */
+/* Node hover / selected / pinned in light theme */
 [data-theme="light"] .node:hover { filter: brightness(0.92) drop-shadow(0 0 6px rgba(0,0,0,0.15)); }
 [data-theme="light"] .node.selected .node-shape { stroke: #1d4ed8; stroke-width: 3; filter: drop-shadow(0 0 8px rgba(37,99,235,0.4)); }
+[data-theme="light"] .node.pinned .node-shape { filter: drop-shadow(0 0 6px rgba(200, 130, 0, 0.6)); }
+[data-theme="light"] .node.pinned:hover .node-shape { filter: drop-shadow(0 0 8px rgba(200, 130, 0, 0.85)); }
 
 /* Node kind badge text darker in light mode for readability */
 [data-theme="light"] .node-kind-badge {

@@ -73,6 +73,10 @@ body.panel-hidden #detail-panel {
   overflow: hidden;
   border-left: none;
 }
+/* Both panels collapsed simultaneously — higher specificity overrides either single rule */
+body.sidebar-hidden.panel-hidden {
+  grid-template-columns: 0px 1fr 0px;
+}
 
 /* ── Global form element theming ──────────────────────────────────────── */
 /* Fixes the "bright white select in dark mode" problem by removing OS        */

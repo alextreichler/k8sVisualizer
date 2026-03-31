@@ -80,39 +80,166 @@ func (r *Reconciler) ReconcileDeployments() {
 }
 
 // ReconcileStatefulSets ensures each StatefulSet's pod count matches spec.replicas.
+// Pods are named <sts-name>-<ordinal> following real Kubernetes StatefulSet semantics.
+// StatefulSets annotated with "k8svisualizer/scenario-managed: true" are skipped so
+// that scenario step callbacks can control pod creation without the reconciler racing.
 func (r *Reconciler) ReconcileStatefulSets() {
 	sets := r.store.FilterByKind(models.KindStatefulSet)
 	for _, ss := range sets {
+		if ss.Annotations["k8svisualizer/scenario-managed"] == "true" {
+			continue
+		}
 		var spec models.StatefulSetSpec
 		if err := json.Unmarshal(ss.Spec, &spec); err != nil {
 			continue
 		}
-		r.reconcileOwner(ss, spec.Replicas, ss.Namespace,
-			map[string]string{"app": ss.Name})
+		r.reconcileStatefulSet(ss, spec.Replicas)
 	}
+}
+
+// reconcileStatefulSet manages pods with ordinal names (<sts-name>-0, -1, -2…).
+func (r *Reconciler) reconcileStatefulSet(ss *models.Node, desired int) {
+	// Build a set of ordinals that already have a live pod
+	existing := r.activePodsOwnedBy(ss.ID)
+	usedOrdinals := make(map[int]bool, len(existing))
+	for _, p := range existing {
+		// pod name is "<sts-name>-<ordinal>"
+		prefix := ss.Name + "-"
+		if len(p.Name) > len(prefix) {
+			ordStr := p.Name[len(prefix):]
+			var ord int
+			if n, err := fmt.Sscanf(ordStr, "%d", &ord); n == 1 && err == nil {
+				usedOrdinals[ord] = true
+			}
+		}
+	}
+
+	actual := len(existing)
+
+	if actual < desired {
+		// OrderedReady: only create pod N when pod N-1 is Running.
+		for ord := 0; ord < desired; ord++ {
+			if usedOrdinals[ord] {
+				// Pod already exists — check if it's Running before allowing next ordinal
+				podRunning := false
+				prefix := ss.Name + "-"
+				for _, p := range existing {
+					if p.Name == fmt.Sprintf("%s%d", prefix, ord) {
+						podRunning = (p.SimPhase == string(models.PodRunning))
+						break
+					}
+				}
+				if !podRunning {
+					// This ordinal exists but isn't Running yet — stop here
+					break
+				}
+			} else {
+				// This ordinal is missing — create it (pod N-1 must be Running or N==0)
+				r.createPodForStatefulSet(ss, ord)
+				usedOrdinals[ord] = true
+				actual++
+				// After creating a pod, stop — wait for it to become Running before creating next
+				break
+			}
+		}
+	} else if actual > desired {
+		// Remove highest-ordinal pods first (StatefulSet scale-down order)
+		type ordPod struct {
+			ord int
+			pod *models.Node
+		}
+		var ordered []ordPod
+		prefix := ss.Name + "-"
+		for _, p := range existing {
+			if len(p.Name) > len(prefix) {
+				var ord int
+				if n, err := fmt.Sscanf(p.Name[len(prefix):], "%d", &ord); n == 1 && err == nil {
+					ordered = append(ordered, ordPod{ord, p})
+				}
+			}
+		}
+		// Sort descending by ordinal
+		for i := 0; i < len(ordered)-1; i++ {
+			for j := i + 1; j < len(ordered); j++ {
+				if ordered[j].ord > ordered[i].ord {
+					ordered[i], ordered[j] = ordered[j], ordered[i]
+				}
+			}
+		}
+		excess := actual - desired
+		for i := 0; i < excess && i < len(ordered); i++ {
+			TerminatePod(r.store, ordered[i].pod)
+		}
+	}
+}
+
+// createPodForStatefulSet creates a pod with the correct StatefulSet ordinal name.
+func (r *Reconciler) createPodForStatefulSet(ss *models.Node, ordinal int) {
+	podName := fmt.Sprintf("%s-%d", ss.Name, ordinal)
+	podID := fmt.Sprintf("pod-sts-%s-%d", ss.ID, ordinal)
+
+	podLabels := map[string]string{
+		"app":                          ss.Name,
+		"statefulset.kubernetes.io/pod-name": podName,
+	}
+
+	ps := models.PodSpec{
+		Phase:    models.PodPending,
+		OwnerRef: ss.ID,
+		Labels:   podLabels,
+	}
+
+	pod := &models.Node{
+		ID:       podID,
+		TypeMeta: models.TypeMeta{APIVersion: "v1", Kind: models.KindPod},
+		ObjectMeta: models.ObjectMeta{
+			Name:      podName,
+			Namespace: ss.Namespace,
+			Labels:    podLabels,
+		},
+		SimPhase: string(models.PodPending),
+	}
+	pod.Spec, _ = json.Marshal(ps)
+	pod.Status, _ = json.Marshal(map[string]any{
+		"phase":     string(models.PodPending),
+		"startTime": time.Now().Format(time.RFC3339),
+	})
+
+	r.assignNodeToPod(pod)
+	r.store.Add(pod)
+	r.store.AddEdge(&models.Edge{
+		ID:     store.EdgeID(ss.ID, pod.ID, models.EdgeOwns),
+		Source: ss.ID,
+		Target: pod.ID,
+		Type:   models.EdgeOwns,
+	})
 }
 
 // ReconcileDaemonSets ensures each DaemonSet's pod count matches a simulated node count.
 func (r *Reconciler) ReconcileDaemonSets() {
 	daemonsets := r.store.FilterByKind(models.KindDaemonSet)
-	// We'll simulate a fixed cluster of 3 nodes for DaemonSets.
-	const simulatedNodes = 3
+
+	// Use actual worker nodes if present; fall back to 3 for scenarios with no node resources.
+	actualNodes := r.store.FilterByKind(models.KindNode)
+	nodeCount := len(actualNodes)
+	if nodeCount == 0 {
+		nodeCount = 3
+	}
 
 	for _, ds := range daemonsets {
 		var spec models.DaemonSetSpec
 		if err := json.Unmarshal(ds.Spec, &spec); err != nil {
 			continue
 		}
-		
-		r.reconcileOwner(ds, simulatedNodes, ds.Namespace, spec.Selector)
-		
+
+		r.reconcileOwner(ds, nodeCount, ds.Namespace, spec.Selector)
+
 		activePods := r.activePodsOwnedBy(ds.ID)
 		actual := len(activePods)
 
-		// Update DaemonSet status
 		ds.Status, _ = json.Marshal(models.DaemonSetStatus{
-			NumberReady:            min(actual, simulatedNodes),
-			DesiredNumberScheduled: simulatedNodes,
+			NumberReady:            min(actual, nodeCount),
+			DesiredNumberScheduled: nodeCount,
 		})
 		r.store.Update(ds)
 	}
@@ -465,13 +592,25 @@ func (r *Reconciler) activePodsOwnedBy(ownerID string) []*models.Node {
 	return out
 }
 
-func (r *Reconciler) createPod(rs *models.Node, deploy *models.Node) {
-	r.podSeq++
-	suffix := fmt.Sprintf("%05d", r.podSeq)
-	rsName := rs.Name
-	if len(rsName) > 12 {
-		rsName = rsName[:12]
+// podSuffix generates a 5-char base32-like lowercase suffix matching real K8s pod names.
+func (r *Reconciler) podSuffix() string {
+	const chars = "bcdfghjklmnpqrstvwxz2456789" // base32hex without vowels/ambiguous chars
+	b := make([]byte, 5)
+	for i := range b {
+		b[i] = chars[r.rng.Intn(len(chars))]
 	}
+	return string(b)
+}
+
+func (r *Reconciler) createPod(rs *models.Node, deploy *models.Node) {
+	// Deployment pods: <deploy-name>-<rs-hash>-<random5>
+	// The RS name already contains the pod-template hash (e.g. "nginx-66b6c48dd5").
+	// Use last 10 chars of RS ID as the hash segment for consistency.
+	rsHash := rs.ID
+	if len(rsHash) > 10 {
+		rsHash = rsHash[len(rsHash)-10:]
+	}
+	suffix := r.podSuffix()
 
 	var rsSpec models.ReplicaSetSpec
 	json.Unmarshal(rs.Spec, &rsSpec)
@@ -500,11 +639,17 @@ func (r *Reconciler) createPod(rs *models.Node, deploy *models.Node) {
 		PVCRefs:       tmpl.PVCRefs,
 	}
 
+	// Pod name: <deploy-name>-<rsHash>-<random5>  (mirrors real K8s naming)
+	deployName := rs.Name
+	if deploy != nil {
+		deployName = deploy.Name
+	}
+	podName := fmt.Sprintf("%s-%s-%s", deployName, rsHash, suffix)
 	id := fmt.Sprintf("pod-sim-%s-%s", rs.ID, suffix)
 	pod := &models.Node{
 		ID:         id,
 		TypeMeta:   models.TypeMeta{APIVersion: "v1", Kind: models.KindPod},
-		ObjectMeta: models.ObjectMeta{Name: fmt.Sprintf("%s-%s", rsName, suffix), Namespace: rs.Namespace, Labels: podLabels},
+		ObjectMeta: models.ObjectMeta{Name: podName, Namespace: rs.Namespace, Labels: podLabels},
 		SimPhase:   string(models.PodPending),
 	}
 	pod.Spec, _ = json.Marshal(ps)
@@ -538,13 +683,10 @@ func (r *Reconciler) createPod(rs *models.Node, deploy *models.Node) {
 	}
 }
 
+// createPodForOwner is used by DaemonSets, Jobs, and CronJobs.
+// Pod names use a random 5-char suffix: <owner-name>-<random5>
 func (r *Reconciler) createPodForOwner(owner *models.Node, namespace string, podLabels map[string]string) {
-	r.podSeq++
-	suffix := fmt.Sprintf("%05d", r.podSeq)
-	ownerName := owner.Name
-	if len(ownerName) > 12 {
-		ownerName = ownerName[:12]
-	}
+	suffix := r.podSuffix()
 
 	ps := models.PodSpec{
 		Phase:    models.PodPending,
@@ -552,11 +694,12 @@ func (r *Reconciler) createPodForOwner(owner *models.Node, namespace string, pod
 		Labels:   podLabels,
 	}
 
+	podName := fmt.Sprintf("%s-%s", owner.Name, suffix)
 	id := fmt.Sprintf("pod-sim-%s-%s", owner.ID, suffix)
 	pod := &models.Node{
 		ID:         id,
 		TypeMeta:   models.TypeMeta{APIVersion: "v1", Kind: models.KindPod},
-		ObjectMeta: models.ObjectMeta{Name: fmt.Sprintf("%s-%s", ownerName, suffix), Namespace: namespace, Labels: podLabels},
+		ObjectMeta: models.ObjectMeta{Name: podName, Namespace: namespace, Labels: podLabels},
 		SimPhase:   string(models.PodPending),
 	}
 	pod.Spec, _ = json.Marshal(ps)

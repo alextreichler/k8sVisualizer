@@ -348,6 +348,119 @@ func SimulateLivenessProbeFailure(s *ClusterStore, podID string, onStep func(i, 
 	return nil
 }
 
+// SimulateReadinessProbeFailure simulates a readiness probe failing on a pod.
+// Unlike liveness probe failure, the pod stays Running but is removed from
+// Service endpoints — traffic stops reaching it without a restart.
+func SimulateReadinessProbeFailure(s *ClusterStore, podID string, onStep func(i, total int, label string)) error {
+	pod, ok := s.Get(podID)
+	if !ok {
+		return fmt.Errorf("pod %s not found", podID)
+	}
+	if pod.Kind != models.KindPod {
+		return fmt.Errorf("%s is not a pod", podID)
+	}
+
+	total := 6
+	step := func(i int, delay time.Duration, label string, action func()) {
+		time.Sleep(delay)
+		if action != nil {
+			action()
+		}
+		onStep(i, total, label)
+	}
+
+	step(1, 0, "Readiness probe failure detected — HTTP GET /healthz returned 503", func() {
+		setPodSimPhase(s, pod, "Running", "Running", "NotReady", "Readiness probe failed: HTTP probe failed with statuscode: 503")
+	})
+	step(2, 800*time.Millisecond, "Failure 1/3 (failureThreshold=3) — pod still in endpoints, traffic may see errors", nil)
+	step(3, 1200*time.Millisecond, "Failure 2/3 — kubelet updating pod Ready condition to False", nil)
+	step(4, 1200*time.Millisecond, "Failure 3/3 — pod marked NotReady, endpoint controller removing from Service endpoints", func() {
+		// Remove edges from Services to this pod
+		for _, e := range s.ListEdges() {
+			if e.Type == models.EdgeSelects && e.Target == podID {
+				s.RemoveEdge(e.ID)
+			}
+		}
+		// Update pod annotation
+		p, ok := s.Get(podID)
+		if ok {
+			if p.Annotations == nil {
+				p.Annotations = map[string]string{}
+			}
+			p.Annotations["readiness-probe"] = "failing"
+			s.Update(p)
+		}
+	})
+	step(5, 600*time.Millisecond, "Pod is Running but NOT Ready — no restarts, no traffic. Fix: check app logs and /healthz endpoint", nil)
+	step(6, 400*time.Millisecond, "✗ Ready condition: False  |  kubectl describe pod shows: Readiness probe failed", nil)
+	return nil
+}
+
+// SimulateKubeletRecovery simulates a previously NotReady node recovering.
+// The kubelet resumes heartbeats, node taint is removed, pods are re-scheduled.
+func SimulateKubeletRecovery(s *ClusterStore, onStep func(i, total int, label string)) error {
+	// Find a NotReady node
+	var targetNode *models.Node
+	for _, n := range s.FilterByKind(models.KindNode) {
+		if n.Annotations != nil && n.Annotations["simulation"] == "node-not-ready" {
+			targetNode = n
+			break
+		}
+	}
+	// Also look for nodes with the standard warning annotation set by SimulateNodeNotReady
+	if targetNode == nil {
+		for _, n := range s.FilterByKind(models.KindNode) {
+			var status models.NodeStatus
+			if n.Status != nil {
+				json.Unmarshal(n.Status, &status)
+			}
+			for _, c := range status.Conditions {
+				if c == "NotReady" {
+					targetNode = n
+					break
+				}
+			}
+			if targetNode != nil {
+				break
+			}
+		}
+	}
+	if targetNode == nil {
+		return fmt.Errorf("no NotReady node found — run Node NotReady simulation first")
+	}
+
+	total := 7
+	step := func(i int, delay time.Duration, label string, action func()) {
+		time.Sleep(delay)
+		if action != nil {
+			action()
+		}
+		onStep(i, total, label)
+	}
+
+	step(1, 0, "Kubelet process restarted on "+targetNode.Name+" — sending NodeReady heartbeat to API server", nil)
+	step(2, 800*time.Millisecond, "Node controller: received heartbeat after silence — evaluating node conditions", nil)
+	step(3, 1000*time.Millisecond, "Node conditions updating: MemoryPressure=False, DiskPressure=False, NetworkUnavailable=False, Ready=True", func() {
+		n, ok := s.Get(targetNode.ID)
+		if !ok {
+			return
+		}
+		n.Status, _ = json.Marshal(models.NodeStatus{Conditions: []string{"Ready"}})
+		if n.Annotations == nil {
+			n.Annotations = map[string]string{}
+		}
+		delete(n.Annotations, "simulation")
+		delete(n.Annotations, "k8svisualizer/warning")
+		n.Annotations["node.kubernetes.io/ready"] = "true"
+		s.Update(n)
+	})
+	step(4, 1200*time.Millisecond, "Removing node taint: node.kubernetes.io/not-ready:NoExecute", nil)
+	step(5, 800*time.Millisecond, "Scheduler: node "+targetNode.Name+" is now schedulable — evaluating pending pods", nil)
+	step(6, 1000*time.Millisecond, "Pending pods (evicted during outage) being rescheduled onto recovered node", nil)
+	step(7, 600*time.Millisecond, "✓ Node "+targetNode.Name+" fully recovered — Ready=True, pods rescheduling", nil)
+	return nil
+}
+
 // collectPodsOnNode returns all pods whose PodSpec.NodeName matches nodeName.
 func collectPodsOnNode(s *ClusterStore, nodeName string) []*models.Node {
 	s.mu.RLock()

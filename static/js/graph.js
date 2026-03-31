@@ -31,52 +31,66 @@ const KIND_ABBR = {
 
 // Component descriptions shown in SVG title tooltips
 const KIND_DESCRIPTIONS = {
-  ControlPlaneComponent: 'Core Kubernetes control plane component.',
-  Deployment:    'Manages a set of identical pods. Handles rolling updates and rollbacks.',
-  ReplicaSet:    'Ensures a specified number of pod replicas are running at all times.',
-  Pod:           'The smallest deployable unit. Runs one or more containers.',
-  Service:       'Stable network endpoint that routes traffic to matching pods via label selectors.',
-  Ingress:       'HTTP/HTTPS routing rules. Routes external traffic to services inside the cluster.',
-  ConfigMap:     'Stores non-secret configuration data as key-value pairs.',
-  Secret:        'Stores sensitive data (passwords, tokens) encoded as base64.',
-  PersistentVolumeClaim: 'Request for storage. Binds to a PersistentVolume.',
-  PersistentVolume:      'A piece of storage provisioned in the cluster, independent of any pod.',
-  StatefulSet:   'Manages pods that need stable network IDs and persistent storage (e.g. databases).',
-  DaemonSet:     'Ensures one pod runs on every (or selected) node. Used for node-level agents.',
-  HorizontalPodAutoscaler: 'Automatically scales replicas based on CPU/memory or custom metrics.',
-  CronJob:       'Runs Jobs on a time-based schedule (cron syntax).',
-  Job:           'Creates one or more pods and ensures they complete successfully.',
-  Namespace:     'Virtual cluster within a cluster. Isolates resources by team or environment.',
+  ControlPlaneComponent: 'A core Kubernetes control-plane component (kube-apiserver, etcd, kube-scheduler, kube-controller-manager). Runs as a static Pod on control-plane nodes, managed directly by the kubelet.',
+  Deployment:    'Manages identical stateless Pods via a ReplicaSet. Supports rolling updates, rollbacks, and scaling. Each spec change creates a new ReplicaSet — enabling instant rollback.',
+  ReplicaSet:    'Ensures a specified number of Pod replicas are running. Owned by a Deployment — rarely created directly. Replaces failed Pods automatically.',
+  Pod:           'The smallest schedulable unit. One or more containers sharing a network namespace (IP + ports) and optionally volumes. Ephemeral — deleted and recreated, never restarted in-place.',
+  Service:       'Stable ClusterIP + DNS name that load-balances traffic to matching Pods via label selector. Types: ClusterIP, NodePort, LoadBalancer, ExternalName.',
+  Ingress:       'HTTP/HTTPS routing rules for external traffic. Routes by hostname or path prefix to backend Services. Requires an Ingress Controller (nginx, Traefik…) to function.',
+  ConfigMap:     'Stores non-confidential config as key-value pairs or files. Injected into Pods as env vars or mounted volumes. Volume changes propagate within ~60s.',
+  Secret:        'Stores sensitive data (passwords, tokens, TLS certs) as base64-encoded values. Enable Encryption at Rest in production — base64 is not encryption.',
+  PersistentVolumeClaim: 'A request for durable storage. Binds 1:1 to a PersistentVolume. Data survives Pod deletion.',
+  PersistentVolume: 'Durable storage provisioned by an admin or CSI driver. Bound to one PVC. Reclaim policy controls what happens on PVC deletion (Retain/Delete).',
+  StatefulSet:   'Manages stateful apps needing stable identity per Pod: ordinal names (<name>-0, -1…), stable DNS via headless Service, and per-Pod PVCs. Pods start/stop in ordinal order (OrderedReady).',
+  DaemonSet:     'Ensures one Pod runs on every Node (or selected Nodes). Auto-adds Pods as Nodes join. Used for log shippers, node monitors, and network plugins.',
+  HorizontalPodAutoscaler: 'Scales Deployment or StatefulSet replicas based on CPU/memory or custom metrics. Scale-up is fast; scale-down has a stabilization window (default 5m) to prevent flapping.',
+  CronJob:       'Runs Jobs on a cron schedule. Each trigger creates a new Job. concurrencyPolicy controls overlapping runs (Allow/Forbid/Replace).',
+  Job:           'Creates Pods and tracks successful completions. Retries up to backoffLimit on failure. Used for batch tasks, migrations, and one-off scripts.',
+  Namespace:     'Virtual partition within a cluster. Scopes resource names, RBAC, ResourceQuotas, and LimitRanges.',
   // cert-manager
-  Certificate:   'cert-manager Certificate. Describes a desired x509 certificate — the controller provisions it via an Issuer.',
-  Issuer:        'cert-manager Issuer. Namespace-scoped certificate authority (e.g. self-signed, CA, ACME/Let\'s Encrypt).',
-  ClusterIssuer: 'cert-manager ClusterIssuer. Cluster-scoped certificate authority available to all namespaces.',
-  Application:   'ArgoCD Application CR. Declares the desired state: Git repo + path + target cluster/namespace. The application-controller continuously syncs it.',
-  // Redpanda operator CRD kinds
-  RedpandaTopic:  'Redpanda Topic CR (cluster.redpanda.com/v1alpha2). Operator creates/updates the Kafka topic via rpk. Spec sets partitions, replication factor, and config overrides.',
-  RedpandaUser:   'Redpanda User CR. Operator syncs SASL users and ACLs via the Admin API. Password pulled from a Secret reference.',
-  RedpandaSchema: 'Redpanda Schema CR. Operator registers Avro/Protobuf/JSON schemas via Schema Registry API (:8081). Supports BACKWARD/FORWARD/FULL compatibility.',
-  HelmRelease:    'FluxCD HelmRelease. Used by legacy Redpanda operator (v0.x, useFlux=true). FluxCD renders and applies the Helm chart; the operator manages only this CR.',
-  HelmRepository: 'FluxCD HelmRepository. Points FluxCD to a Helm chart repository (e.g. charts.redpanda.com). Used by the legacy v0.x operator path.',
+  Certificate:   'cert-manager Certificate CR. Declares desired x.509 cert (DNS names, duration, Issuer). Controller provisions it and stores signed cert + key in a Secret.',
+  Issuer:        'cert-manager Issuer (namespace-scoped). Configures a certificate authority backend: SelfSigned, CA (Secret), ACME (Let\'s Encrypt HTTP-01/DNS-01), Vault, or Venafi.',
+  ClusterIssuer: 'cert-manager ClusterIssuer (cluster-scoped). Like Issuer but usable by Certificates in any namespace.',
+  // ArgoCD
+  Application:   'ArgoCD Application CR. Declares Git source + target cluster/namespace + sync policy. The application-controller continuously diffs live state against Git and syncs.',
+  // Redpanda CRDs
+  RedpandaTopic:  'Redpanda Topic CR. Operator reconciles the Kafka topic via rpk (partitions, replication factor, retention, config overrides).',
+  RedpandaUser:   'Redpanda User CR. Operator syncs SASL user credentials and ACLs via the Admin API. Password from a Secret reference.',
+  RedpandaSchema: 'Redpanda Schema CR. Operator registers Avro/Protobuf/JSON schemas in Schema Registry (:8081) with compatibility enforcement.',
+  HelmRelease:    'FluxCD HelmRelease CR. Used by legacy Redpanda operator v0.x (useFlux=true). FluxCD helm-controller renders and applies the Helm chart.',
+  HelmRepository: 'FluxCD HelmRepository CR. Points source-controller to a Helm chart repo. Used by legacy Redpanda operator v0.x.',
   // RBAC
-  ServiceAccount: 'An identity for a Pod (or component). Pods use its token to authenticate requests to the kube-apiserver. Binds to Roles/ClusterRoles via RoleBindings.',
-  Role:           'Namespace-scoped set of permissions. Defines WHAT verbs are allowed on WHAT resources within a single namespace.',
-  ClusterRole:    'Cluster-scoped set of permissions. Like Role but applies across all namespaces — used for node-level agents, operators, and cross-namespace controllers.',
-  RoleBinding:    'Grants a Role to a ServiceAccount (or user/group) within one namespace. Connects WHO (subject) to WHAT (role).',
-  ClusterRoleBinding: 'Grants a ClusterRole cluster-wide. Binds a ServiceAccount to a ClusterRole so it can act on any namespace.',
+  ServiceAccount: 'Identity for processes inside a Pod. Short-lived JWT token auto-mounted at /var/run/secrets/kubernetes.io/serviceaccount/token. Bind to Roles via RoleBindings.',
+  Role:           'Namespace-scoped permissions. Defines allowed verbs (get, list, create…) on API resources within one namespace.',
+  ClusterRole:    'Cluster-scoped permissions. Like Role but works across all namespaces — required for cluster-scoped resources and cross-namespace operators.',
+  RoleBinding:    'Grants a Role to a ServiceAccount (or user/group) within one namespace.',
+  ClusterRoleBinding: 'Grants a ClusterRole cluster-wide. Used for operators and system components needing cross-namespace access.',
   // Infrastructure
-  Node:           'A worker machine in the cluster (VM or bare-metal). Runs the kubelet, kube-proxy, and container runtime. Pods are scheduled onto Nodes.',
+  Node:           'Worker machine running kubelet, kube-proxy, and container runtime. Pods are scheduled here. Cordon stops new scheduling without evicting existing Pods.',
+  // Storage / Policy
+  StorageClass:   'Defines storage type and CSI provisioner for dynamic PV provisioning. The default StorageClass is used when a PVC omits storageClassName.',
+  LimitRange:     'Sets per-container default resource requests/limits and min/max bounds. Required for ResourceQuota CPU/memory enforcement.',
+  NetworkPolicy:  'Restricts pod-to-pod traffic using label selectors. Requires a CNI that enforces policies (Calico, Cilium). Without one, policies have no effect.',
+  ResourceQuota:  'Caps total resource consumption per namespace (CPU, memory, pod count, etc.). Requests exceeding quota are rejected with 403.',
 };
 
 // Specific component descriptions for well-known names
 const COMPONENT_DESCRIPTIONS = {
-  'coredns':           'DNS server for the cluster. Resolves service names to cluster IPs.',
-  'kube-proxy':        'Maintains network rules on nodes to allow pod-to-pod and pod-to-service communication.',
-  'kube-scheduler':    'Assigns pods to nodes based on resource requirements and constraints.',
-  'kube-controller-manager': 'Runs control loops: Deployment, ReplicaSet, Node, and other controllers.',
-  'etcd':              'Key-value store. The source of truth for all cluster state.',
-  'kube-apiserver':    'The front door to the cluster. All components communicate through it.',
-  'cloud-controller-manager': 'Integrates with cloud provider APIs (load balancers, storage, nodes).',
+  'coredns':           'Cluster DNS. Resolves service names (my-svc.ns.svc.cluster.local → ClusterIP) and Pod records. Forwards unknown domains upstream. Runs as 2 replicas in kube-system.',
+  'kube-proxy':        'DaemonSet on every Node. Programs iptables/ipvs rules so Service ClusterIPs route to backend Pod IPs. Sets kernel forwarding rules — does not proxy traffic itself.',
+  'kube-scheduler':    'Assigns unscheduled Pods to Nodes. Filters ineligible Nodes, scores eligible ones (resources, affinity, taints), and writes the chosen Node name to the Pod.',
+  'kube-controller-manager': 'Single binary running 40+ reconciliation controllers: Deployment, ReplicaSet, DaemonSet, StatefulSet, Job, Node, PV binding, HPA, EndpointSlice, and more.',
+  'etcd':              'Distributed key-value store (Raft). The sole persistent state store — only kube-apiserver reads/writes it. Loss of quorum freezes the cluster.',
+  'kube-apiserver':    'Cluster front door. All kubectl, controller, and kubelet calls go through here. Performs authn, authz, and admission control before persisting to etcd.',
+  'cloud-controller-manager': 'Cloud-provider controllers (Node, Route, LoadBalancer) decoupled from kube-controller-manager. Provisions cloud LBs for LoadBalancer Services and manages Node lifecycle.',
+  'cert-manager':      'cert-manager controller. Watches Certificate CRs and provisions x.509 certs via Issuer/ClusterIssuer backends. Stores cert + key in a Secret. Auto-renews before expiry.',
+  'cert-manager-webhook': 'Admission webhook that validates/mutates cert-manager CRDs on every create/update. Must be reachable — if down, cert-manager CR operations fail.',
+  'cert-manager-cainjector': 'Injects CA bundles into ValidatingWebhookConfiguration and MutatingWebhookConfiguration so kube-apiserver trusts webhook TLS certificates.',
+  'argocd-server':     'ArgoCD API server and web UI. Handles authentication, RBAC, and app management (sync, diff, rollback). Used by the argocd CLI and browser UI.',
+  'argocd-application': 'ArgoCD application-controller. Reconciles Git desired state with live cluster state. Reports Sync and Health status, triggers syncs.',
+  'argocd-repo':       'ArgoCD repo-server. Clones Git repos, renders manifests (Helm, Kustomize, plain YAML), returns objects to the application-controller.',
+  'redpanda':          'Top-level Redpanda CR. Operator reconciles it into a StatefulSet, Services, ConfigMaps, and Secrets forming the Redpanda broker cluster.',
+  'prometheus':        'Scrapes /metrics endpoints and stores time-series data (TSDB). PromQL for queries and alerting. Paired with Alertmanager and Grafana.',
 };
 
 // Edge type → arrowhead marker id
@@ -105,19 +119,19 @@ const EDGE_COLORS = {
 
 // Human-readable tooltip for each edge type (shown on hover)
 const EDGE_DESCRIPTIONS = {
-  owns:     'owns — parent creates and manages this resource',
-  selects:  'selects — routes traffic to matching Pods via label selector',
-  mounts:   'mounts — Pod uses this as a volume or environment variable',
-  bound:    'bound — PVC is bound to this PersistentVolume',
-  routes:   'routes — Ingress forwards HTTP/S traffic to this Service',
-  scales:   'scales — HPA adjusts the replica count of this workload',
-  headless: 'headless — StatefulSet uses this Service for stable Pod DNS names',
-  watches:      'watches — connects via Informer/ListWatch to receive change events from kube-apiserver',
-  stores:       'stores — kube-apiserver is the ONLY component that persists state here',
-  uses:         'uses — Pod authenticates to kube-apiserver using this ServiceAccount token (auto-mounted at /var/run/secrets)',
-  binds:        'binds — RoleBinding grants this Role/ClusterRole to its subjects',
-  subject:      'subject — ServiceAccount (or user) granted permissions by this RoleBinding',
-  'scheduled-on': 'scheduled-on — Pod is running on this Node (kubelet manages the pod lifecycle)',
+  owns:     'owns — the parent created this resource and manages its lifecycle. Deleting the parent cascades (e.g. Deployment → ReplicaSet → Pods).',
+  selects:  'selects — Service or NetworkPolicy targets these Pods via label selector. kube-proxy keeps Endpoints current as Pods come and go.',
+  mounts:   'mounts — Pod uses this ConfigMap, Secret, or PVC as a volume mount or env-var injection.',
+  bound:    'bound — PVC is bound 1:1 to this PersistentVolume. Once bound, the volume is exclusively reserved for this claim.',
+  routes:   'routes — Ingress forwards HTTP/S requests to this Service based on hostname or path rules.',
+  scales:   'scales — HPA reads metrics and adjusts the replica count of this Deployment or StatefulSet.',
+  headless: 'headless — StatefulSet uses this headless Service (clusterIP: None) to give each Pod a stable DNS name: <pod>.<svc>.<ns>.svc.cluster.local.',
+  watches:  'watches — connects to kube-apiserver via Informer/ListWatch to receive a live stream of create/update/delete events without polling.',
+  stores:   'stores — kube-apiserver is the ONLY component that reads and writes cluster state here. All others talk to the API server, never directly to etcd.',
+  uses:     'uses — Pod authenticates to kube-apiserver using this ServiceAccount token (auto-mounted at /var/run/secrets/kubernetes.io/serviceaccount/token).',
+  binds:    'binds — RoleBinding grants this Role/ClusterRole\'s permissions to its listed subjects (ServiceAccounts, users, groups).',
+  subject:  'subject — this ServiceAccount (or user/group) is listed as a subject of the RoleBinding and receives the bound Role\'s permissions.',
+  'scheduled-on': 'scheduled-on — kube-scheduler selected this Node for the Pod. The kubelet on that Node is responsible for starting and managing the container(s).',
 };
 
 // Namespace zone visual config
@@ -233,8 +247,12 @@ export class SVGGraph {
     this._nsDrag = null;             // { ns, startX, startY, baseOffX, baseOffY }
     this._onNsOffsetChange = null;
 
+    // Edge type visibility filter
+    this._hiddenEdgeTypes = new Set();
+
     this._initDefs();
     this._initZoneDrag();
+    this._initEdgeTooltip();
   }
 
   onNodeClick(cb) { this._onNodeClick = cb; }
@@ -341,11 +359,34 @@ export class SVGGraph {
       if (!edge) continue;
       const src = positions[edge.source];
       const tgt = positions[edge.target];
-      if (src && tgt) el.setAttribute('d', edgePath(src, tgt, NODE_R));
+      if (src && tgt) {
+        const d = edgePath(src, tgt, NODE_R);
+        if (el._visiblePath) {
+          // el is a <g> wrapping visible path + hit path
+          el._visiblePath.setAttribute('d', d);
+          el._hitPath.setAttribute('d', d);
+        } else {
+          el.setAttribute('d', d);
+        }
+      }
+      // Apply edge type visibility
+      el.style.display = this._hiddenEdgeTypes.has(edge.type) ? 'none' : '';
     }
     // Update zones every 6 ticks (throttle for performance)
     this._zoneTick++;
     if (this._zoneTick % 6 === 0) this._renderZones(positions);
+  }
+
+  // Show or hide edges of a given type
+  setEdgeTypeVisible(type, visible) {
+    if (!visible) this._hiddenEdgeTypes.add(type);
+    else this._hiddenEdgeTypes.delete(type);
+    // Re-apply visibility to existing edges immediately
+    for (const [, el] of this._edgeEls) {
+      const edge = el._edge;
+      if (!edge) continue;
+      el.style.display = this._hiddenEdgeTypes.has(edge.type) ? 'none' : '';
+    }
   }
 
   markSelected(id, selected) {
@@ -353,6 +394,18 @@ export class SVGGraph {
     if (!el) return;
     if (selected) el.classList.add('selected');
     else el.classList.remove('selected');
+  }
+
+  markPinned(id, pinned) {
+    const el = this._nodeEls.get(id);
+    if (!el) return;
+    if (pinned) {
+      el.classList.add('pinned');
+      el.title = 'Pinned — double-click to release';
+    } else {
+      el.classList.remove('pinned');
+      el.removeAttribute('title');
+    }
   }
 
   // Apply viewport transform (pan/zoom)
@@ -456,18 +509,74 @@ export class SVGGraph {
     if (label) label.textContent = truncate(node.metadata?.name || node.name || '', 16);
   }
 
+  _initEdgeTooltip() {
+    const tip = document.createElement('div');
+    tip.id = 'edge-tooltip';
+    document.body.appendChild(tip);
+    this._edgeTip = tip;
+  }
+
+  _showEdgeTip(edgeType, x, y) {
+    const desc = EDGE_DESCRIPTIONS[edgeType] || edgeType;
+    // Format: first word capitalised as the "type" header, rest as body
+    // desc format is "typename — explanation text"
+    const dashIdx = desc.indexOf(' — ');
+    let html;
+    if (dashIdx !== -1) {
+      const typeName = desc.slice(0, dashIdx);
+      const explanation = desc.slice(dashIdx + 3);
+      const formatted = typeName.charAt(0).toUpperCase() + typeName.slice(1);
+      html = `<strong>${formatted}</strong><br>${explanation}`;
+    } else {
+      const formatted = edgeType.charAt(0).toUpperCase() + edgeType.slice(1);
+      html = `<strong>${formatted}</strong><br>${desc}`;
+    }
+    this._edgeTip.innerHTML = html;
+
+    // Position near cursor, clamped to viewport
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const tipW = 340;
+    const tipH = 60; // approximate
+    let left = x + 14;
+    let top  = y - 10;
+    if (left + tipW > W - 8) left = x - tipW - 14;
+    if (top + tipH > H - 8) top = H - tipH - 8;
+    if (top < 8) top = 8;
+    this._edgeTip.style.left = `${left}px`;
+    this._edgeTip.style.top  = `${top}px`;
+    this._edgeTip.classList.add('visible');
+  }
+
+  _hideEdgeTip() {
+    this._edgeTip.classList.remove('visible');
+  }
+
   _createEdgeEl(edge) {
     const color = EDGE_COLORS[edge.type] || '#4a5a7a';
     const markerID = EDGE_MARKERS[edge.type] || 'arrow-owns';
+
+    // Wrap visible path + hit area in a <g> so both share the same event surface
+    const g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'edge-group');
+    g.style.cursor = 'default';
+
+    // Hit area — wide transparent path for easier hover targeting
+    const hit = document.createElementNS(NS, 'path');
+    hit.setAttribute('fill', 'none');
+    hit.setAttribute('stroke', 'transparent');
+    hit.setAttribute('stroke-width', '12');
+    hit.setAttribute('class', 'edge-hit');
+
+    // Visible path
     const path = svgEl('path', {
       class: `edge edge-${edge.type}`,
       stroke: color,
       'marker-end': `url(#${markerID})`,
       fill: 'none',
     });
-    path._edge = edge;
 
-    // Hover tooltip: "sourceName → targetName\nedge description"
+    // Native browser title for accessibility / fallback
     const srcName = this._nameIndex.get(edge.source) || edge.source;
     const tgtName = this._nameIndex.get(edge.target) || edge.target;
     const desc = EDGE_DESCRIPTIONS[edge.type] || edge.type;
@@ -475,7 +584,24 @@ export class SVGGraph {
     title.textContent = `${srcName}  →  ${tgtName}\n${desc}`;
     path.appendChild(title);
 
-    return path;
+    g.appendChild(hit);
+    g.appendChild(path);
+
+    // Store edge reference on the group for applyPositions
+    g._edge = edge;
+    // Also keep a direct reference to the visible path and hit path for position updates
+    g._visiblePath = path;
+    g._hitPath = hit;
+
+    // Custom floating tooltip events
+    g.addEventListener('mousemove', (e) => {
+      this._showEdgeTip(edge.type, e.clientX, e.clientY);
+    });
+    g.addEventListener('mouseleave', () => {
+      this._hideEdgeTip();
+    });
+
+    return g;
   }
 
   _renderZones(positions) {
@@ -593,6 +719,11 @@ export class SVGGraph {
     const ctm = this._viewport.getScreenCTM();
     if (!ctm) return { x: clientX, y: clientY };
     return pt.matrixTransform(ctm.inverse());
+  }
+
+  // Set a namespace zone offset directly (e.g. when restoring from localStorage).
+  setNsOffset(ns, dx, dy) {
+    this._nsOffsets.set(ns, { dx, dy });
   }
 
   // Clear mirrored ns offsets (call when cluster is reset so next drag starts fresh).
