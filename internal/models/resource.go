@@ -59,17 +59,22 @@ const (
 	// Pseudo-nodes: not real K8s resources, added by the simulator to show external access paths.
 	KindExternalClient    = "ExternalClient"    // represents the internet / external client
 	KindIngressController = "IngressController" // represents the nginx/Traefik ingress controller pod
+
+	// Istio service mesh CRD kinds
+	KindVirtualService  = "VirtualService"
+	KindDestinationRule = "DestinationRule"
 )
 
 // PodPhase mirrors corev1.PodPhase
 type PodPhase string
 
 const (
-	PodPending     PodPhase = "Pending"
-	PodRunning     PodPhase = "Running"
-	PodSucceeded   PodPhase = "Succeeded"
-	PodFailed      PodPhase = "Failed"
-	PodTerminating PodPhase = "Terminating" // not a real k8s phase, used for simulation
+	PodInitializing PodPhase = "Initializing" // init containers running — simulation only
+	PodPending      PodPhase = "Pending"
+	PodRunning      PodPhase = "Running"
+	PodSucceeded    PodPhase = "Succeeded"
+	PodFailed       PodPhase = "Failed"
+	PodTerminating  PodPhase = "Terminating" // not a real k8s phase, used for simulation
 )
 
 // PVCPhase mirrors corev1.PersistentVolumeClaimPhase
@@ -150,10 +155,12 @@ type DeploymentStatus struct {
 }
 
 type PodTemplateSpec struct {
-	Labels        map[string]string `json:"labels,omitempty"`
-	ConfigMapRefs []string          `json:"configMapRefs,omitempty"` // IDs
-	SecretRefs    []string          `json:"secretRefs,omitempty"`   // IDs
-	PVCRefs       []string          `json:"pvcRefs,omitempty"`      // IDs
+	Labels         map[string]string `json:"labels,omitempty"`
+	ConfigMapRefs  []string          `json:"configMapRefs,omitempty"`  // IDs
+	SecretRefs     []string          `json:"secretRefs,omitempty"`    // IDs
+	PVCRefs        []string          `json:"pvcRefs,omitempty"`       // IDs
+	InitContainers []ContainerInfo   `json:"initContainers,omitempty"` // run before main containers
+	Containers     []ContainerInfo   `json:"containers,omitempty"`
 }
 
 type ReplicaSetSpec struct {
@@ -250,11 +257,21 @@ type PVStatus struct {
 	BoundPVCID string  `json:"boundPVCID,omitempty"`
 }
 
+// PVCTemplateSpec is used by StatefulSets to auto-create one PVC per pod ordinal.
+// Mirrors the subset of k8s volumeClaimTemplates used in simulation.
+type PVCTemplateSpec struct {
+	Name             string   `json:"name"`
+	StorageClassName string   `json:"storageClassName,omitempty"`
+	AccessModes      []string `json:"accessModes"`
+	Requests         string   `json:"requests"` // e.g. "5Gi"
+}
+
 type StatefulSetSpec struct {
 	Replicas             int               `json:"replicas"`
 	Selector             map[string]string `json:"selector"`
 	ServiceName          string            `json:"serviceName"`
-	VolumeClaimTemplates []string          `json:"volumeClaimTemplates,omitempty"` // PVC IDs
+	VolumeClaimTemplates []string          `json:"volumeClaimTemplates,omitempty"` // PVC IDs (legacy)
+	PVCTemplates         []PVCTemplateSpec `json:"pvcTemplates,omitempty"`         // auto-provisioned per ordinal
 }
 
 type StatefulSetStatus struct {
@@ -384,4 +401,62 @@ type SlicePort struct {
 	Name     string `json:"name,omitempty"`
 	Port     int    `json:"port"`
 	Protocol string `json:"protocol"`
+}
+
+// ── Istio service mesh spec structs ──────────────────────────────────────────
+
+// VirtualServiceSpec mirrors the Istio networking.istio.io/v1 VirtualService.
+type VirtualServiceSpec struct {
+	Hosts    []string    `json:"hosts"`
+	Gateways []string    `json:"gateways,omitempty"`
+	Http     []HTTPRoute `json:"http,omitempty"`
+}
+
+type HTTPRoute struct {
+	Name  string               `json:"name,omitempty"`
+	Match []HTTPMatchRequest   `json:"match,omitempty"`
+	Route []HTTPRouteDestDest  `json:"route"`
+}
+
+type HTTPMatchRequest struct {
+	Uri map[string]string `json:"uri,omitempty"`
+}
+
+type HTTPRouteDestDest struct {
+	Destination IstioDestination `json:"destination"`
+	Weight      int              `json:"weight,omitempty"`
+}
+
+type IstioDestination struct {
+	Host   string `json:"host"`
+	Subset string `json:"subset,omitempty"`
+	Port   int    `json:"port,omitempty"`
+}
+
+// DestinationRuleSpec mirrors the Istio networking.istio.io/v1 DestinationRule.
+type DestinationRuleSpec struct {
+	Host          string          `json:"host"`
+	TrafficPolicy *IstioTraffic   `json:"trafficPolicy,omitempty"`
+	Subsets       []IstioSubset   `json:"subsets,omitempty"`
+}
+
+type IstioTraffic struct {
+	ConnectionPool *IstioConnPool `json:"connectionPool,omitempty"`
+	OutlierDetect  *IstioOutlier  `json:"outlierDetection,omitempty"`
+}
+
+type IstioConnPool struct {
+	Http1MaxPendingRequests int `json:"http1MaxPendingRequests,omitempty"`
+	Http2MaxRequests        int `json:"http2MaxRequests,omitempty"`
+}
+
+type IstioOutlier struct {
+	Consecutive5xxErrors int    `json:"consecutive5xxErrors,omitempty"`
+	Interval             string `json:"interval,omitempty"`
+	BaseEjectionTime     string `json:"baseEjectionTime,omitempty"`
+}
+
+type IstioSubset struct {
+	Name   string            `json:"name"`
+	Labels map[string]string `json:"labels"`
 }

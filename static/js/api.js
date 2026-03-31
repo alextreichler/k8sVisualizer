@@ -50,6 +50,7 @@ export const api = {
   bootstrap: (action, opts = {}) => request('POST', '/api/simulate/bootstrap', { action, ...opts }),
   simulateFailure: (type, resourceID) => request('POST', '/api/simulate/failure', { type, resourceID }),
   rollingUpdate: () => request('POST', '/api/simulate/rolling-update', {}),
+  setSpeed: (multiplier) => request('POST', '/api/simulate/speed', { multiplier }),
 
   // Versions
   listVersions: () => request('GET', '/api/versions'),

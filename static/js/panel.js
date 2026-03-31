@@ -44,6 +44,9 @@ const KIND_DESCRIPTIONS = {
   // Storage / Quota
   StorageClass:   'Defines a class of storage and the CSI provisioner that creates volumes dynamically (e.g. <code>ebs.csi.aws.com</code>, <code>pd.csi.storage.gke.io</code>). PVCs reference a StorageClass by name to request a specific type of disk. The StorageClass marked <em>default</em> is used when a PVC omits <code>storageClassName</code>. Parameters map to CSI driver-specific options (disk type, IOPS tier, encryption).',
   LimitRange:     'Sets per-Pod, per-Container, or per-PVC default resource requests/limits and minimum/maximum bounds within a namespace. When a container spec omits resource requests, the LimitRange <code>defaultRequest</code> is injected by the admission controller. This is required for ResourceQuota CPU/memory enforcement — Kubernetes will not admit a Pod without resource requests when a CPU or memory quota is active.',
+  // Istio CRD kinds
+  VirtualService:    'Configures traffic routing rules in the Istio service mesh. Decouples routing from Kubernetes Service selectors — you can route by HTTP header, URI prefix, or weighted percentage to different <em>subsets</em> defined in a DestinationRule. Key advantage over pure K8s canary: a <code>weight: 10</code> rule gives 10% of traffic regardless of how many pods v2 has running. Also supports retries, timeouts, fault injection (HTTP 500 at 5% of requests), and header manipulation.',
+  DestinationRule:   'Defines the <em>subsets</em> (named groups of pods selected by labels, e.g. <code>version: v1</code>) that VirtualServices route traffic to. Also configures per-subset traffic policies: connection pool sizing (max pending requests, max connections), outlier detection (<em>circuit breaking</em> — automatically eject unhealthy pods from the load-balancing pool after N consecutive errors), and TLS settings for mTLS between services.',
   // External access pseudo-nodes (simulator-only)
   ExternalClient:    '<em>Simulator pseudo-node</em> — represents an external client or the public internet. Automatically appears whenever a <em>LoadBalancer</em> or <em>NodePort</em> Service or an <em>Ingress</em> resource is present. Wired via <code>routes</code> edges to show how traffic enters the cluster from outside. Not a real Kubernetes resource.',
   IngressController: '<em>Simulator pseudo-node</em> — represents the Ingress Controller (typically <code>ingress-nginx</code> or Traefik) running inside the cluster. Sits between the internet and your Ingress rules. The controller is a Pod (or Deployment) that watches Ingress objects and programs the underlying proxy. It reads Ingress rules, terminates TLS (using Secrets), and forwards HTTP/S traffic to the target Service. Not a real Kubernetes resource — click an Ingress node to see the actual routing rules.',
@@ -66,6 +69,9 @@ const COMPONENT_DESCRIPTIONS = {
   'argocd-server': 'The ArgoCD API server and web UI backend. Exposes REST/gRPC APIs consumed by the <code>argocd</code> CLI and browser UI. Handles SSO/OIDC authentication, RBAC policy enforcement, app management requests (sync, diff, rollback, delete), and WebSocket streaming for live log tailing. Communicates with the application-controller (sync status) and repo-server (rendered manifests).',
   'argocd-application': 'The ArgoCD application-controller. Runs a continuous reconciliation loop that compares desired state (rendered from Git) with live cluster state (Kubernetes API). Computes and reports Sync status (Synced/OutOfSync) and Health status (Healthy/Degraded/Progressing/Missing). Triggers sync operations (automatically with auto-sync, or on-demand). Manages app-of-apps patterns and handles resource pruning when objects are removed from Git.',
   'argocd-repo': 'The ArgoCD repo-server. Clones and caches Git repositories locally, then renders manifests using the appropriate tool: plain YAML, Helm (renders chart with values), Kustomize, or Jsonnet. Returns rendered Kubernetes objects to the application-controller for comparison and sync. Runs in isolation for security — manifest generation happens here, not in the controller. Supports Config Management Plugins (CMP) for custom toolchains.',
+  // Istio
+  'istiod': 'The Istio control plane daemon — three components in one binary. <em>Pilot</em> converts Istio CRDs (VirtualService, DestinationRule) into Envoy xDS configuration and pushes it to all sidecar proxies. <em>Citadel</em> issues mTLS certificates to sidecar proxies (SPIFFE/X.509). <em>Galley</em> validates Istio configuration. All data-plane traffic bypasses istiod at runtime — it only pushes config changes.',
+
   // Redpanda
   'redpanda': 'The top-level Redpanda Custom Resource. Create this object to declare "I want a Redpanda cluster with these settings." The redpanda-operator watches for it via Informer and reconciles all dependent resources: a StatefulSet for broker Pods, a headless Service for stable Pod DNS names, a LoadBalancer/NodePort Service for client access, ConfigMaps for broker config, Secrets for TLS certificates and SASL credentials, and optionally a Redpanda Console Deployment. Edit this CR to change broker count, resource limits, TLS settings, or enable features like Schema Registry.',
 };
@@ -334,6 +340,49 @@ export class DetailPanel {
         break;
       }
 
+      case 'Service': {
+        const spec = node.spec || {};
+        const ns   = node.metadata?.namespace || '';
+        const name = node.metadata?.name || node.id;
+        const svcType   = spec.clusterIP === 'None' ? 'Headless' : (spec.type || 'ClusterIP');
+        const clusterIP = spec.clusterIP || '—';
+        const ports = (spec.ports || []).map(p =>
+          `<tr><td>${escapeHTML(p.name || '—')}</td><td>${p.port}</td><td>${p.targetPort}</td><td>${escapeHTML(p.protocol || 'TCP')}</td></tr>`
+        ).join('');
+
+        let fqdnHtml = '';
+        if (ns) {
+          const fqdn = `${name}.${ns}.svc.cluster.local`;
+          fqdnHtml = `<tr><td>FQDN</td><td><code>${escapeHTML(fqdn)}</code></td></tr>`;
+        }
+        const externalIP = node.annotations?.['k8svisualizer/external-ip'];
+        const externalIPRow = externalIP ? `<tr><td>External IP</td><td><code>${escapeHTML(externalIP)}</code></td></tr>` : '';
+
+        c.innerHTML += section('Networking', `
+          <table class="meta-table"><tbody>
+            <tr><td>Type</td><td><strong>${escapeHTML(svcType)}</strong></td></tr>
+            <tr><td>ClusterIP</td><td><code>${escapeHTML(clusterIP)}</code></td></tr>
+            ${fqdnHtml}
+            ${externalIPRow}
+          </tbody></table>`);
+
+        if (ports) {
+          c.innerHTML += section('Ports', `
+            <table class="meta-table"><thead><tr><th>Name</th><th>Port</th><th>TargetPort</th><th>Protocol</th></tr></thead>
+            <tbody>${ports}</tbody></table>`);
+        }
+
+        c.innerHTML += section('Traffic Simulation',
+          `<div class="panel-actions">
+            <button class="btn" id="btn-simulate-traffic" title="Animate request flow: Service → Pod">▶ Simulate Request</button>
+          </div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:4px">
+            Pulses the Service→Pod edges with animated packets. Green = success, red = failure.
+          </div>`
+        );
+        break;
+      }
+
       case 'Ingress': {
         const spec = node.spec || {};
         const rules = spec.rules || [];
@@ -429,6 +478,27 @@ export class DetailPanel {
           ? `<span class="phase-badge phase-Failed">NotReady</span>`
           : (ready ? `<span class="phase-badge phase-Running">Ready</span>` : `<span class="phase-badge phase-Pending">Unknown</span>`);
 
+        // Count pods on this node for a resource utilization view
+        const nodeName = node.metadata?.name || node.name || '';
+        let podCount = 0;
+        let maxPods = 110; // k8s default
+        if (this._store) {
+          for (const n of this._store.nodes.values()) {
+            if (n.kind === 'Pod' && n.simPhase !== 'Terminating') {
+              let ps = {};
+              try { ps = JSON.parse(n.spec || '{}'); } catch {}
+              if (ps.nodeName === nodeName) podCount++;
+            }
+          }
+        }
+        const podPct = Math.min(100, Math.round((podCount / maxPods) * 100));
+        const podBarColor = podPct > 80 ? 'var(--danger)' : podPct > 60 ? 'var(--warning)' : 'var(--success)';
+        const podBar = `
+          <div style="margin:6px 0 2px;font-size:11px;color:var(--text-muted)">Pods: ${podCount} / ${maxPods}</div>
+          <div style="background:var(--bg-hover);border-radius:3px;height:6px;overflow:hidden">
+            <div style="width:${podPct}%;height:100%;background:${podBarColor};border-radius:3px;transition:width 0.3s"></div>
+          </div>`;
+
         c.innerHTML += section('Node Status', `
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">${condBadge}</div>
           <table class="meta-table"><tbody>
@@ -436,7 +506,8 @@ export class DetailPanel {
             <tr><td>OS</td><td>${escapeHTML(nodeSpec.osImage || '—')}</td></tr>
             <tr><td>Kubelet</td><td>${escapeHTML(nodeSpec.kubeletVersion || '—')}</td></tr>
             <tr><td>Roles</td><td>${escapeHTML((nodeSpec.roles || []).join(', ') || '—')}</td></tr>
-          </tbody></table>`);
+          </tbody></table>
+          ${podBar}`);
 
         // Node failure injection (only if Ready)
         if (ready) {
@@ -467,6 +538,42 @@ export class DetailPanel {
                  PVC → Pending · PV → Released.
                </div>`)
         );
+        break;
+      }
+
+      case 'VirtualService': {
+        const spec = node.spec || {};
+        const hosts = (spec.hosts || []).join(', ') || '—';
+        const routes = spec.http || [];
+        const routeRows = routes.flatMap(r => (r.route || []).map(d =>
+          `<tr><td>${escapeHTML(d.destination?.subset || d.destination?.host || '—')}</td><td>${d.weight ?? 100}%</td></tr>`
+        )).join('');
+        c.innerHTML += section('Virtual Service Routing', `
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Hosts: <code>${escapeHTML(hosts)}</code></div>
+          ${routeRows ? `<table class="meta-table"><thead><tr><th>Subset / Destination</th><th>Weight</th></tr></thead><tbody>${routeRows}</tbody></table>` : ''}
+          <div style="font-size:10px;color:var(--text-muted);margin-top:6px">
+            Weight-based routing — independent of pod replica count. Change weights without restarting pods.
+          </div>`);
+        break;
+      }
+
+      case 'DestinationRule': {
+        const spec = node.spec || {};
+        const subsets = spec.subsets || [];
+        const subsetRows = subsets.map(s => {
+          const lbl = Object.entries(s.labels || {}).map(([k,v]) => `${k}=${v}`).join(', ');
+          return `<tr><td><strong>${escapeHTML(s.name)}</strong></td><td>${escapeHTML(lbl)}</td></tr>`;
+        }).join('');
+        const od = spec.trafficPolicy?.outlierDetection || spec.trafficPolicy?.outlierDetect;
+        const cbHtml = od
+          ? `<div style="font-size:10px;color:var(--text-muted);margin-top:6px">
+               Circuit breaker: eject after <strong>${od.consecutive5xxErrors || od.consecutive5XxErrors || '—'} consecutive 5xx</strong>,
+               check every ${od.interval || '—'}, eject for ${od.baseEjectionTime || '—'}
+             </div>`
+          : '';
+        c.innerHTML += section('Subsets', `
+          ${subsetRows ? `<table class="meta-table"><thead><tr><th>Subset</th><th>Labels</th></tr></thead><tbody>${subsetRows}</tbody></table>` : 'No subsets defined.'}
+          ${cbHtml}`);
         break;
       }
     }

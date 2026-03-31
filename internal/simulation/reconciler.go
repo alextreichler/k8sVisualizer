@@ -174,19 +174,59 @@ func (r *Reconciler) reconcileStatefulSet(ss *models.Node, desired int) {
 }
 
 // createPodForStatefulSet creates a pod with the correct StatefulSet ordinal name.
+// If the StatefulSet spec has PVCTemplates, one PVC is created per template.
 func (r *Reconciler) createPodForStatefulSet(ss *models.Node, ordinal int) {
 	podName := fmt.Sprintf("%s-%d", ss.Name, ordinal)
 	podID := fmt.Sprintf("pod-sts-%s-%d", ss.ID, ordinal)
 
 	podLabels := map[string]string{
-		"app":                          ss.Name,
+		"app":                                ss.Name,
 		"statefulset.kubernetes.io/pod-name": podName,
+	}
+
+	// Auto-create PVCs from volumeClaimTemplates
+	var pvcRefs []string
+	var ssSpec models.StatefulSetSpec
+	if ss.Spec != nil {
+		if err := json.Unmarshal(ss.Spec, &ssSpec); err == nil {
+			for _, tmpl := range ssSpec.PVCTemplates {
+				pvcName := fmt.Sprintf("%s-%s", tmpl.Name, podName)
+				pvcID := fmt.Sprintf("pvc-sts-%s-%d-%s", ss.ID, ordinal, tmpl.Name)
+				if _, exists := r.store.Get(pvcID); !exists {
+					pvc := &models.Node{
+						ID:       pvcID,
+						TypeMeta: models.TypeMeta{APIVersion: "v1", Kind: models.KindPVC},
+						ObjectMeta: models.ObjectMeta{
+							Name:      pvcName,
+							Namespace: ss.Namespace,
+							Labels:    map[string]string{"app": ss.Name},
+						},
+					}
+					pvc.Spec, _ = json.Marshal(models.PVCSpec{
+						StorageClassName: tmpl.StorageClassName,
+						AccessModes:      tmpl.AccessModes,
+						Requests:         tmpl.Requests,
+					})
+					pvc.Status, _ = json.Marshal(models.PVCStatus{Phase: models.PVCPending})
+					r.store.Add(pvc)
+					// Ownership: StatefulSet → PVC
+					r.store.AddEdge(&models.Edge{
+						ID:     store.EdgeID(ss.ID, pvcID, models.EdgeOwns),
+						Source: ss.ID,
+						Target: pvcID,
+						Type:   models.EdgeOwns,
+					})
+				}
+				pvcRefs = append(pvcRefs, pvcID)
+			}
+		}
 	}
 
 	ps := models.PodSpec{
 		Phase:    models.PodPending,
 		OwnerRef: ss.ID,
 		Labels:   podLabels,
+		PVCRefs:  pvcRefs,
 	}
 
 	pod := &models.Node{
@@ -213,6 +253,16 @@ func (r *Reconciler) createPodForStatefulSet(ss *models.Node, ordinal int) {
 		Target: pod.ID,
 		Type:   models.EdgeOwns,
 	})
+
+	// Mount PVCs
+	for _, pvcID := range pvcRefs {
+		r.store.AddEdge(&models.Edge{
+			ID:     store.EdgeID(pod.ID, pvcID, models.EdgeMounts),
+			Source: pod.ID,
+			Target: pvcID,
+			Type:   models.EdgeMounts,
+		})
+	}
 }
 
 // ReconcileDaemonSets ensures each DaemonSet's pod count matches a simulated node count.
@@ -638,13 +688,20 @@ func (r *Reconciler) createPod(rs *models.Node, deploy *models.Node) {
 		podLabels[k] = v
 	}
 
+	initialPhase := models.PodPending
+	if len(tmpl.InitContainers) > 0 {
+		initialPhase = models.PodInitializing
+	}
+
 	ps := models.PodSpec{
-		Phase:         models.PodPending,
-		OwnerRef:      rs.ID,
-		Labels:        podLabels,
-		ConfigMapRefs: tmpl.ConfigMapRefs,
-		SecretRefs:    tmpl.SecretRefs,
-		PVCRefs:       tmpl.PVCRefs,
+		Phase:          initialPhase,
+		OwnerRef:       rs.ID,
+		Labels:         podLabels,
+		ConfigMapRefs:  tmpl.ConfigMapRefs,
+		SecretRefs:     tmpl.SecretRefs,
+		PVCRefs:        tmpl.PVCRefs,
+		InitContainers: tmpl.InitContainers,
+		Containers:     tmpl.Containers,
 	}
 
 	// Pod name: <deploy-name>-<rsHash>-<random5>  (mirrors real K8s naming)
@@ -658,7 +715,7 @@ func (r *Reconciler) createPod(rs *models.Node, deploy *models.Node) {
 		ID:         id,
 		TypeMeta:   models.TypeMeta{APIVersion: "v1", Kind: models.KindPod},
 		ObjectMeta: models.ObjectMeta{Name: podName, Namespace: rs.Namespace, Labels: podLabels},
-		SimPhase:   string(models.PodPending),
+		SimPhase:   string(initialPhase),
 	}
 	pod.Spec, _ = json.Marshal(ps)
 	pod.Status, _ = json.Marshal(map[string]any{"phase": string(models.PodPending), "startTime": time.Now().Format(time.RFC3339)})

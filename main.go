@@ -107,7 +107,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to sub static FS: %v", err)
 	}
-	handler := api.NewRouter(s, broker, staticFS, cfg)
+	handler := api.NewRouter(s, broker, staticFS, cfg, engine)
 
 	addr := fmt.Sprintf(":%d", *port)
 	srv := &http.Server{

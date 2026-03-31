@@ -90,6 +90,7 @@
   stroke-width: 1.5;
 }
 .phase-dot.Running          { fill: #4caf82; }
+.phase-dot.Initializing     { fill: #ff9800; animation: phasePulse 1.2s ease-in-out infinite; }
 .phase-dot.Pending          { fill: #f5a623; }
 .phase-dot.Terminating      { fill: #9e9e9e; }
 .phase-dot.Failed           { fill: #e05252; }

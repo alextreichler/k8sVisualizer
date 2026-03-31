@@ -1429,3 +1429,314 @@ func RunCanaryScenario(s *ClusterStore, onStep func(i, total int, label string))
 	step(21, 300*time.Millisecond, "Next step: rename canary deployment to stable, delete old stable", nil)
 	step(22, 200*time.Millisecond, "✓ Canary rollout complete  |  Rollback: kubectl scale canary=0, stable=3", nil)
 }
+
+// RunIstioScenario demonstrates Istio service mesh traffic management:
+// VirtualService + DestinationRule enable weighted canary routing and circuit breaking,
+// showing the difference from pure Kubernetes label-selector based routing.
+func RunIstioScenario(s *ClusterStore, onStep func(i, total int, label string)) {
+	// Wipe previous istio resources
+	for _, id := range []string{
+		"ns-istio-demo", "ns-istio-system",
+		"deploy-bookinfo-v1", "deploy-bookinfo-v2",
+		"rs-bookinfo-v1", "rs-bookinfo-v2",
+		"pod-bookinfo-v1-0", "pod-bookinfo-v1-1", "pod-bookinfo-v1-2",
+		"pod-bookinfo-v2-0",
+		"svc-bookinfo", "vs-bookinfo", "dr-bookinfo",
+		"deploy-istiod", "rs-istiod", "pod-istiod-0",
+		"svc-istiod",
+	} {
+		s.Delete(id)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	total := 28
+	step := func(i int, delay time.Duration, label string, action func()) {
+		time.Sleep(delay)
+		if action != nil {
+			action()
+		}
+		onStep(i, total, label)
+	}
+
+	step(1, 0, "$ kubectl create namespace istio-system", func() {
+		nsSystem := node("ns-istio-system", models.KindNamespace, "v1", "istio-system", "", nil, spec(models.ConfigMapSpec{}))
+		s.Add(nsSystem)
+	})
+	step(2, 300*time.Millisecond, "$ istioctl install --set profile=demo -y", nil)
+
+	// istiod control plane
+	istiodDeploy := node("deploy-istiod", models.KindDeployment, "apps/v1", "istiod", "istio-system",
+		labels("app", "istiod", "istio", "pilot"),
+		spec(models.DeploymentSpec{Replicas: 1, Selector: map[string]string{"app": "istiod"}}))
+	istiodDeploy.Status = statusJSON(models.DeploymentStatus{Replicas: 1, ReadyReplicas: 0})
+	step(3, 400*time.Millisecond, "+ deployment/istiod created  (Pilot: xDS config server + Citadel: cert authority + Galley: config validation)", func() {
+		s.Add(istiodDeploy)
+	})
+
+	istiodRS := node("rs-istiod", models.KindReplicaSet, "apps/v1", "istiod-rs", "istio-system",
+		labels("app", "istiod"),
+		spec(models.ReplicaSetSpec{Replicas: 1, Selector: map[string]string{"app": "istiod"}, OwnerRef: istiodDeploy.ID}))
+	step(4, 300*time.Millisecond, "  ↳ replicaset/istiod-rs created", func() {
+		s.Add(istiodRS)
+		s.AddEdge(edge(istiodDeploy.ID, istiodRS.ID, models.EdgeOwns, ""))
+	})
+
+	istiodPod := node("pod-istiod-0", models.KindPod, "v1", "istiod-0", "istio-system",
+		labels("app", "istiod"),
+		spec(models.PodSpec{Phase: models.PodPending, OwnerRef: istiodRS.ID, Labels: map[string]string{"app": "istiod"}}))
+	istiodPod.SimPhase = string(models.PodPending)
+	istiodPod.Status = statusJSON(map[string]string{"phase": "Pending"})
+	step(5, 400*time.Millisecond, "  ↳ pod/istiod-0 Pending → ContainerCreating → Running  (pulls gcr.io/istio-release/pilot)", func() {
+		s.Add(istiodPod)
+		s.AddEdge(edge(istiodRS.ID, istiodPod.ID, models.EdgeOwns, ""))
+	})
+
+	istiodSvc := node("svc-istiod", models.KindService, "v1", "istiod", "istio-system",
+		labels("app", "istiod"),
+		spec(models.ServiceSpec{
+			Type:      models.ServiceClusterIP,
+			Selector:  map[string]string{"app": "istiod"},
+			ClusterIP: "10.96.14.1",
+			Ports:     []models.ServicePort{{Name: "grpc-xds", Protocol: "TCP", Port: 15010, TargetPort: 15010}},
+		}))
+	step(6, 300*time.Millisecond, "+ service/istiod created  (xDS gRPC port 15010 — Envoy sidecars connect here for config)", func() {
+		s.Add(istiodSvc)
+		s.AddEdge(edge(istiodDeploy.ID, istiodSvc.ID, models.EdgeOwns, ""))
+	})
+
+	// Mark istiod Running
+	step(7, 800*time.Millisecond, "istiod Running — Envoy sidecar injection webhook active", func() {
+		if p, ok := s.Get(istiodPod.ID); ok {
+			p.SimPhase = string(models.PodRunning)
+			p.Status = statusJSON(map[string]string{"phase": "Running"})
+			s.Update(p)
+		}
+		if d, ok := s.Get(istiodDeploy.ID); ok {
+			d.Status = statusJSON(models.DeploymentStatus{Replicas: 1, ReadyReplicas: 1, AvailableReplicas: 1})
+			s.Update(d)
+		}
+	})
+
+	step(8, 300*time.Millisecond, "$ kubectl create namespace istio-demo && kubectl label namespace istio-demo istio-injection=enabled", func() {
+		nsDemo := node("ns-istio-demo", models.KindNamespace, "v1", "istio-demo", "", nil, spec(models.ConfigMapSpec{}))
+		s.Add(nsDemo)
+	})
+	step(9, 300*time.Millisecond, "Namespace labelled — istiod will now inject an Envoy sidecar proxy into every new pod", nil)
+
+	// bookinfo v1 deployment (3 replicas = stable)
+	v1Deploy := node("deploy-bookinfo-v1", models.KindDeployment, "apps/v1", "bookinfo-v1", "istio-demo",
+		labels("app", "bookinfo", "version", "v1"),
+		spec(models.DeploymentSpec{
+			Replicas: 3,
+			Selector: map[string]string{"app": "bookinfo", "version": "v1"},
+			Template: models.PodTemplateSpec{
+				Labels: map[string]string{"app": "bookinfo", "version": "v1"},
+				InitContainers: []models.ContainerInfo{
+					{Name: "istio-init", Image: "gcr.io/istio-release/proxyv2:1.20.0", Role: "init"},
+				},
+				Containers: []models.ContainerInfo{
+					{Name: "bookinfo", Image: "istio/examples-bookinfo-reviews-v1:1.18.0", Role: "main", Ports: []int{9080}},
+					{Name: "istio-proxy", Image: "gcr.io/istio-release/proxyv2:1.20.0", Role: "sidecar", Ports: []int{15090}},
+				},
+			},
+		}))
+	v1Deploy.Status = statusJSON(models.DeploymentStatus{Replicas: 3, ReadyReplicas: 0})
+	step(10, 400*time.Millisecond, "$ kubectl apply -f bookinfo-v1.yaml  (3 replicas — Envoy sidecar auto-injected via MutatingWebhook)", func() {
+		s.Add(v1Deploy)
+	})
+
+	v1RS := node("rs-bookinfo-v1", models.KindReplicaSet, "apps/v1", "bookinfo-v1-rs", "istio-demo",
+		labels("app", "bookinfo", "version", "v1"),
+		spec(models.ReplicaSetSpec{Replicas: 3, Selector: map[string]string{"app": "bookinfo", "version": "v1"}, OwnerRef: v1Deploy.ID}))
+	step(11, 300*time.Millisecond, "  ↳ replicaset/bookinfo-v1-rs created", func() {
+		s.Add(v1RS)
+		s.AddEdge(edge(v1Deploy.ID, v1RS.ID, models.EdgeOwns, ""))
+	})
+
+	for i := 0; i < 3; i++ {
+		ii := i
+		podID := fmt.Sprintf("pod-bookinfo-v1-%d", ii)
+		p := node(podID, models.KindPod, "v1", fmt.Sprintf("bookinfo-v1-%d", ii), "istio-demo",
+			labels("app", "bookinfo", "version", "v1"),
+			spec(models.PodSpec{
+				Phase:    models.PodInitializing,
+				OwnerRef: v1RS.ID,
+				Labels:   map[string]string{"app": "bookinfo", "version": "v1"},
+				InitContainers: []models.ContainerInfo{
+					{Name: "istio-init", Image: "gcr.io/istio-release/proxyv2:1.20.0", Role: "init"},
+				},
+				Containers: []models.ContainerInfo{
+					{Name: "bookinfo", Image: "istio/examples-bookinfo-reviews-v1:1.18.0", Role: "main", Ports: []int{9080}},
+					{Name: "istio-proxy", Image: "gcr.io/istio-release/proxyv2:1.20.0", Role: "sidecar"},
+				},
+			}))
+		p.SimPhase = string(models.PodInitializing)
+		p.Status = statusJSON(map[string]string{"phase": "Initializing"})
+		delay := time.Duration(300+ii*200) * time.Millisecond
+		step(12+ii, delay, fmt.Sprintf("  ↳ pod/bookinfo-v1-%d  Init:0/1 → Running  (istio-init configures iptables rules → Envoy proxy intercepts all traffic)", ii), func() {
+			s.Add(p)
+			s.AddEdge(edge(v1RS.ID, p.ID, models.EdgeOwns, ""))
+		})
+	}
+
+	// Service (selects both v1 and v2 via app=bookinfo)
+	svc := node("svc-bookinfo", models.KindService, "v1", "bookinfo", "istio-demo",
+		labels("app", "bookinfo"),
+		spec(models.ServiceSpec{
+			Type:      models.ServiceClusterIP,
+			Selector:  map[string]string{"app": "bookinfo"},
+			ClusterIP: "10.96.88.1",
+			Ports:     []models.ServicePort{{Name: "http", Protocol: "TCP", Port: 9080, TargetPort: 9080}},
+		}))
+	step(15, 400*time.Millisecond, "+ service/bookinfo created  (ClusterIP — selects all app=bookinfo pods; Istio routes by subset, not label)", func() {
+		s.Add(svc)
+	})
+
+	// Mark v1 pods Running
+	step(16, 600*time.Millisecond, "bookinfo-v1 pods Running — Envoy proxy intercepts all inbound/outbound traffic on port 9080", func() {
+		for i := 0; i < 3; i++ {
+			podID := fmt.Sprintf("pod-bookinfo-v1-%d", i)
+			if p, ok := s.Get(podID); ok {
+				p.SimPhase = string(models.PodRunning)
+				p.Status = statusJSON(map[string]string{"phase": "Running"})
+				s.Update(p)
+			}
+		}
+		if d, ok := s.Get(v1Deploy.ID); ok {
+			d.Status = statusJSON(models.DeploymentStatus{Replicas: 3, ReadyReplicas: 3, AvailableReplicas: 3})
+			s.Update(d)
+		}
+	})
+
+	// DestinationRule — defines v1 and v2 subsets
+	dr := node("dr-bookinfo", models.KindDestinationRule, "networking.istio.io/v1", "bookinfo", "istio-demo",
+		labels("app", "bookinfo"),
+		spec(models.DestinationRuleSpec{
+			Host: "bookinfo",
+			TrafficPolicy: &models.IstioTraffic{
+				OutlierDetect: &models.IstioOutlier{
+					Consecutive5xxErrors: 5,
+					Interval:             "30s",
+					BaseEjectionTime:     "30s",
+				},
+			},
+			Subsets: []models.IstioSubset{
+				{Name: "v1", Labels: map[string]string{"version": "v1"}},
+				{Name: "v2", Labels: map[string]string{"version": "v2"}},
+			},
+		}))
+	step(17, 400*time.Millisecond, "$ kubectl apply -f destination-rule.yaml  — defines subsets v1/v2 and circuit-breaker policy", func() {
+		s.Add(dr)
+		// DR watches the service
+		s.AddEdge(edge(dr.ID, svc.ID, models.EdgeWatches, "routes"))
+	})
+
+	// VirtualService — 90/10 weighted routing
+	vs := node("vs-bookinfo", models.KindVirtualService, "networking.istio.io/v1", "bookinfo", "istio-demo",
+		labels("app", "bookinfo"),
+		spec(models.VirtualServiceSpec{
+			Hosts: []string{"bookinfo"},
+			Http: []models.HTTPRoute{
+				{
+					Name: "canary-split",
+					Route: []models.HTTPRouteDestDest{
+						{Destination: models.IstioDestination{Host: "bookinfo", Subset: "v1"}, Weight: 90},
+						{Destination: models.IstioDestination{Host: "bookinfo", Subset: "v2"}, Weight: 10},
+					},
+				},
+			},
+		}))
+	step(18, 400*time.Millisecond, "$ kubectl apply -f virtual-service.yaml  — 90% → v1 / 10% → v2  (weight-based, not pod-count-based)", func() {
+		s.Add(vs)
+		s.AddEdge(edge(vs.ID, svc.ID, models.EdgeRoutes, "90/10"))
+		s.AddEdge(edge(vs.ID, dr.ID, models.EdgeWatches, "subsets"))
+	})
+
+	step(19, 300*time.Millisecond, "Key insight: pure K8s canary splits traffic by pod ratio (need 9x v1 pods for 90/10). Istio does it by weight regardless of replica count.", nil)
+
+	// Deploy v2 (1 replica = canary)
+	v2Deploy := node("deploy-bookinfo-v2", models.KindDeployment, "apps/v1", "bookinfo-v2", "istio-demo",
+		labels("app", "bookinfo", "version", "v2"),
+		spec(models.DeploymentSpec{
+			Replicas: 1,
+			Selector: map[string]string{"app": "bookinfo", "version": "v2"},
+			Template: models.PodTemplateSpec{
+				Labels: map[string]string{"app": "bookinfo", "version": "v2"},
+				InitContainers: []models.ContainerInfo{
+					{Name: "istio-init", Image: "gcr.io/istio-release/proxyv2:1.20.0", Role: "init"},
+				},
+				Containers: []models.ContainerInfo{
+					{Name: "bookinfo", Image: "istio/examples-bookinfo-reviews-v2:1.18.0", Role: "main", Ports: []int{9080}},
+					{Name: "istio-proxy", Image: "gcr.io/istio-release/proxyv2:1.20.0", Role: "sidecar"},
+				},
+			},
+		}))
+	v2Deploy.Status = statusJSON(models.DeploymentStatus{Replicas: 1, ReadyReplicas: 0})
+	step(20, 400*time.Millisecond, "$ kubectl apply -f bookinfo-v2.yaml  (1 replica — still gets only 10% of traffic because of VirtualService weight)", func() {
+		s.Add(v2Deploy)
+	})
+
+	v2RS := node("rs-bookinfo-v2", models.KindReplicaSet, "apps/v1", "bookinfo-v2-rs", "istio-demo",
+		labels("app", "bookinfo", "version", "v2"),
+		spec(models.ReplicaSetSpec{Replicas: 1, Selector: map[string]string{"app": "bookinfo", "version": "v2"}, OwnerRef: v2Deploy.ID}))
+	step(21, 300*time.Millisecond, "  ↳ replicaset/bookinfo-v2-rs created", func() {
+		s.Add(v2RS)
+		s.AddEdge(edge(v2Deploy.ID, v2RS.ID, models.EdgeOwns, ""))
+	})
+
+	v2Pod := node("pod-bookinfo-v2-0", models.KindPod, "v1", "bookinfo-v2-0", "istio-demo",
+		labels("app", "bookinfo", "version", "v2"),
+		spec(models.PodSpec{
+			Phase:    models.PodInitializing,
+			OwnerRef: v2RS.ID,
+			Labels:   map[string]string{"app": "bookinfo", "version": "v2"},
+			InitContainers: []models.ContainerInfo{
+				{Name: "istio-init", Image: "gcr.io/istio-release/proxyv2:1.20.0", Role: "init"},
+			},
+			Containers: []models.ContainerInfo{
+				{Name: "bookinfo", Image: "istio/examples-bookinfo-reviews-v2:1.18.0", Role: "main", Ports: []int{9080}},
+				{Name: "istio-proxy", Image: "gcr.io/istio-release/proxyv2:1.20.0", Role: "sidecar"},
+			},
+		}))
+	v2Pod.SimPhase = string(models.PodInitializing)
+	v2Pod.Status = statusJSON(map[string]string{"phase": "Initializing"})
+	step(22, 500*time.Millisecond, "  ↳ pod/bookinfo-v2-0  Init:0/1 → Running", func() {
+		s.Add(v2Pod)
+		s.AddEdge(edge(v2RS.ID, v2Pod.ID, models.EdgeOwns, ""))
+	})
+
+	step(23, 800*time.Millisecond, "bookinfo-v2-0 Running — even though v1 has 3 pods and v2 has 1, traffic is still 90/10 as configured in VirtualService", func() {
+		if p, ok := s.Get(v2Pod.ID); ok {
+			p.SimPhase = string(models.PodRunning)
+			p.Status = statusJSON(map[string]string{"phase": "Running"})
+			s.Update(p)
+		}
+		if d, ok := s.Get(v2Deploy.ID); ok {
+			d.Status = statusJSON(models.DeploymentStatus{Replicas: 1, ReadyReplicas: 1, AvailableReplicas: 1})
+			s.Update(d)
+		}
+	})
+
+	step(24, 400*time.Millisecond, "$ kubectl patch vs/bookinfo --type=json -p '[{\"op\":\"replace\",\"path\":\"/spec/http/0/route/1/weight\",\"value\":50}]'", func() {
+		if n, ok := s.Get(vs.ID); ok {
+			n.Spec, _ = json.Marshal(models.VirtualServiceSpec{
+				Hosts: []string{"bookinfo"},
+				Http: []models.HTTPRoute{
+					{
+						Name: "canary-split",
+						Route: []models.HTTPRouteDestDest{
+							{Destination: models.IstioDestination{Host: "bookinfo", Subset: "v1"}, Weight: 50},
+							{Destination: models.IstioDestination{Host: "bookinfo", Subset: "v2"}, Weight: 50},
+						},
+					},
+				},
+			})
+			s.Update(n)
+		}
+	})
+	step(25, 300*time.Millisecond, "Traffic weight updated: 50% → v1 / 50% → v2  (no pod restarts, no config reload — just an xDS push from istiod to all Envoy sidecars)", nil)
+
+	step(26, 300*time.Millisecond, "Circuit breaker active: if bookinfo-v2-0 returns 5 consecutive 5xx errors, Envoy ejects it for 30s — DestinationRule policy", nil)
+	step(27, 200*time.Millisecond, "To promote v2 to 100%: change weight to 0/100, then delete v1 deployment", nil)
+	step(28, 200*time.Millisecond, "✓ Istio scenario complete  —  VirtualService + DestinationRule + circuit-breaker in action", nil)
+}

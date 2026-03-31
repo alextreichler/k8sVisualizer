@@ -11,6 +11,9 @@ import (
 // ticksToRunning is the number of simulation ticks a Pod stays Pending before Running.
 const ticksToRunning = 2
 
+// ticksInitializing is how long init containers run before the pod transitions to Pending.
+const ticksInitializing = 1
+
 // ticksToDeleted is the number of ticks a Pod stays Terminating before being removed.
 const ticksToDeleted = 1
 
@@ -29,6 +32,13 @@ func (l *Lifecycle) Tick() {
 	pods := l.store.FilterByKind(models.KindPod)
 	for _, pod := range pods {
 		switch pod.SimPhase {
+		case string(models.PodInitializing):
+			pod.TickCount++
+			if pod.TickCount >= ticksInitializing {
+				l.transitionPod(pod, models.PodPending)
+			} else {
+				l.store.Update(pod)
+			}
 		case string(models.PodPending):
 			pod.TickCount++
 			if pod.TickCount >= ticksToRunning {

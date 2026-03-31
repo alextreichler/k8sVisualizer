@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"github.com/alextreichler/k8svisualizer/internal/simulation"
 	"github.com/alextreichler/k8svisualizer/internal/store"
 )
 
@@ -33,12 +34,13 @@ type Handlers struct {
 	store           *store.ClusterStore
 	broker          *SSEBroker
 	cfg             Config
+	engine          *simulation.Engine
 	activeScenarios int32 // atomic counter
 }
 
 // NewHandlers creates a Handlers with the given dependencies.
-func NewHandlers(s *store.ClusterStore, b *SSEBroker, cfg Config) *Handlers {
-	return &Handlers{store: s, broker: b, cfg: cfg}
+func NewHandlers(s *store.ClusterStore, b *SSEBroker, cfg Config, engine *simulation.Engine) *Handlers {
+	return &Handlers{store: s, broker: b, cfg: cfg, engine: engine}
 }
 
 // incScenarios atomically increments the active scenario counter.

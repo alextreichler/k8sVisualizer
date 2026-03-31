@@ -7,13 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alextreichler/k8svisualizer/internal/simulation"
 	"github.com/alextreichler/k8svisualizer/internal/store"
 )
 
 // NewRouter wires all routes and returns a ready http.Handler.
 // staticFS is the embedded (or OS) filesystem containing static assets.
-func NewRouter(s *store.ClusterStore, broker *SSEBroker, staticFS fs.FS, cfg Config) http.Handler {
-	h := NewHandlers(s, broker, cfg)
+func NewRouter(s *store.ClusterStore, broker *SSEBroker, staticFS fs.FS, cfg Config, engine *simulation.Engine) http.Handler {
+	h := NewHandlers(s, broker, cfg, engine)
 	mux := http.NewServeMux()
 
 	// Static files — served from embedded FS, no disk access required.
@@ -44,6 +45,7 @@ func NewRouter(s *store.ClusterStore, broker *SSEBroker, staticFS fs.FS, cfg Con
 	mux.HandleFunc("/api/simulate/delete-namespace", h.HandleSimulateDeleteNamespace)
 	mux.HandleFunc("/api/simulate/helm-apply", h.HandleSimulateHelmApply)
 	mux.HandleFunc("/api/simulate/reset", h.HandleSimulateReset)
+	mux.HandleFunc("/api/simulate/speed", h.HandleSimulateSpeed)
 
 	// Versions
 	mux.HandleFunc("/api/versions", h.HandleVersions)

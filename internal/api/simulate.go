@@ -152,6 +152,8 @@ func (h *Handlers) HandleSimulateScenario(w http.ResponseWriter, r *http.Request
 		run(func() { store.RunNodeDrainScenario(h.store, "cp-apiserver", onStep) })
 	case "canary":
 		run(func() { store.RunCanaryScenario(h.store, onStep) })
+	case "istio":
+		run(func() { store.RunIstioScenario(h.store, onStep) })
 	default:
 		h.decScenarios()
 		writeError(w, "unknown scenario: "+body.Name, http.StatusBadRequest)
@@ -446,4 +448,37 @@ func (h *Handlers) HandleSimulateDeleteNamespace(w http.ResponseWriter, r *http.
 	}
 	store.DeleteNamespace(h.store, body.Namespace)
 	writeJSON(w, map[string]any{"deleted": true, "namespace": body.Namespace}, http.StatusOK)
+}
+
+// HandleSimulateSpeed handles POST /api/simulate/speed.
+// Body: {"multiplier": 2.0}
+// Sets the simulation tick speed. 1.0 = real-time (5s/tick), 2.0 = double speed (2.5s/tick).
+func (h *Handlers) HandleSimulateSpeed(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		m := 1.0
+		if h.engine != nil {
+			m = h.engine.SpeedMultiplier()
+		}
+		writeJSON(w, map[string]float64{"multiplier": m}, http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Multiplier float64 `json:"multiplier"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Multiplier <= 0 {
+		writeError(w, "multiplier must be > 0", http.StatusBadRequest)
+		return
+	}
+	if h.engine != nil {
+		h.engine.SetSpeed(body.Multiplier)
+	}
+	writeJSON(w, map[string]float64{"multiplier": body.Multiplier}, http.StatusOK)
 }

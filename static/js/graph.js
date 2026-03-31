@@ -30,6 +30,9 @@ const KIND_ABBR = {
   // External access pseudo-nodes
   ExternalClient:    'internet',
   IngressController: 'ing-ctrl',
+  // Istio
+  VirtualService:   'vs',
+  DestinationRule:  'dr',
 };
 
 // Component descriptions shown in SVG title tooltips
@@ -73,6 +76,9 @@ const KIND_DESCRIPTIONS = {
   // External access pseudo-nodes (simulator-only)
   ExternalClient:    'Pseudo-node representing an external client or the public internet. Wired to LoadBalancer/NodePort Services and to the Ingress Controller to show how traffic enters the cluster.',
   IngressController: 'Pseudo-node representing the Ingress Controller (e.g. ingress-nginx). Receives HTTP/S traffic from outside the cluster, evaluates Ingress routing rules, and forwards to the target Service.',
+  // Istio service mesh
+  VirtualService:   'Istio traffic routing rule. Enables weight-based canary splits, header matching, retries, and fault injection — independent of pod replica count. Envoy sidecars receive this as xDS config from istiod.',
+  DestinationRule:  'Istio traffic policy for a service. Defines named subsets (e.g. v1/v2 by label), connection pool limits, and circuit-breaker (outlier detection) rules applied after routing.',
   // Storage / Policy
   StorageClass:   'Defines storage type and CSI provisioner for dynamic PV provisioning. The default StorageClass is used when a PVC omits storageClassName.',
   LimitRange:     'Sets per-container default resource requests/limits and min/max bounds. Required for ResourceQuota CPU/memory enforcement.',
@@ -920,6 +926,9 @@ function kindShape(kind) {
     // External access pseudo-nodes
     case 'ExternalClient':    return cloudShape(NODE_R);
     case 'IngressController': return gatewayShape(NODE_R);
+    // Istio service mesh CRDs
+    case 'VirtualService':    return vsShape(NODE_R);
+    case 'DestinationRule':   return drShape(NODE_R);
     default:                      return circle(NODE_R);
   }
 }
@@ -1036,6 +1045,21 @@ function cloudShape(r) {
 function gatewayShape(r) {
   const w = r * 1.1, h = r * 0.7, tip = r * 1.3;
   const d = `M${-w},${-h} L${w*0.3},${-h} L${tip},0 L${w*0.3},${h} L${-w},${h} L${-w*0.4},0 Z`;
+  return svgEl('path', { d });
+}
+
+// VirtualService — a rounded rectangle with a horizontal flow line to suggest traffic routing
+function vsShape(r) {
+  const w = r * 1.15, h = r * 0.75, rad = 5;
+  const d = `M${-w+rad},${-h} L${w-rad},${-h} Q${w},${-h} ${w},${-h+rad} L${w},${h-rad} Q${w},${h} ${w-rad},${h} L${-w+rad},${h} Q${-w},${h} ${-w},${h-rad} L${-w},${-h+rad} Q${-w},${-h} ${-w+rad},${-h} Z`;
+  return svgEl('path', { d });
+}
+
+// DestinationRule — a rounded rectangle with notched corners to suggest splitting
+function drShape(r) {
+  const s = r * 0.9;
+  const cut = s * 0.3;
+  const d = `M${-s+cut},${-s} L${s-cut},${-s} L${s},${-s+cut} L${s},${s-cut} L${s-cut},${s} L${-s+cut},${s} L${-s},${s-cut} L${-s},${-s+cut} Z`;
   return svgEl('path', { d });
 }
 
