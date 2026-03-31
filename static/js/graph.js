@@ -27,6 +27,9 @@ const KIND_ABBR = {
   RoleBinding: 'rb', ClusterRoleBinding: 'crb',
   // Infrastructure
   Node: 'node',
+  // External access pseudo-nodes
+  ExternalClient:    'internet',
+  IngressController: 'ing-ctrl',
 };
 
 // Component descriptions shown in SVG title tooltips
@@ -67,6 +70,9 @@ const KIND_DESCRIPTIONS = {
   ClusterRoleBinding: 'Grants a ClusterRole cluster-wide. Used for operators and system components needing cross-namespace access.',
   // Infrastructure
   Node:           'Worker machine running kubelet, kube-proxy, and container runtime. Pods are scheduled here. Cordon stops new scheduling without evicting existing Pods.',
+  // External access pseudo-nodes (simulator-only)
+  ExternalClient:    'Pseudo-node representing an external client or the public internet. Wired to LoadBalancer/NodePort Services and to the Ingress Controller to show how traffic enters the cluster.',
+  IngressController: 'Pseudo-node representing the Ingress Controller (e.g. ingress-nginx). Receives HTTP/S traffic from outside the cluster, evaluates Ingress routing rules, and forwards to the target Service.',
   // Storage / Policy
   StorageClass:   'Defines storage type and CSI provisioner for dynamic PV provisioning. The default StorageClass is used when a PVC omits storageClassName.',
   LimitRange:     'Sets per-container default resource requests/limits and min/max bounds. Required for ResourceQuota CPU/memory enforcement.',
@@ -242,6 +248,9 @@ export class SVGGraph {
     this._zoneTick = 0;
     this._filterText = '';
 
+    // Focus mode: when set, dims all nodes/edges not adjacent to this node ID
+    this._focusNodeId = null;
+
     // Zone drag state
     this._nsOffsets = new Map();     // ns → { dx, dy } — mirrors layout offsets
     this._nsDrag = null;             // { ns, startX, startY, baseOffX, baseOffY }
@@ -344,6 +353,9 @@ export class SVGGraph {
 
     // Apply current positions
     this.applyPositions(this._positions);
+
+    // Reapply focus after any render so new elements get the right dim state
+    if (this._focusNodeId) this._applyFocus();
   }
 
   // Called by force simulation each tick with updated positions
@@ -368,6 +380,15 @@ export class SVGGraph {
         } else {
           el.setAttribute('d', d);
         }
+        // Reposition edge label at the midpoint of the bezier arc
+        if (el._labelEl) {
+          const dx = tgt.x - src.x, dy = tgt.y - src.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const lx = (src.x + tgt.x) / 2 - (dy / dist) * 14;
+          const ly = (src.y + tgt.y) / 2 + (dx / dist) * 14;
+          el._labelEl.setAttribute('x', lx);
+          el._labelEl.setAttribute('y', ly);
+        }
       }
       // Apply edge type visibility
       el.style.display = this._hiddenEdgeTypes.has(edge.type) ? 'none' : '';
@@ -386,6 +407,53 @@ export class SVGGraph {
       const edge = el._edge;
       if (!edge) continue;
       el.style.display = this._hiddenEdgeTypes.has(edge.type) ? 'none' : '';
+    }
+  }
+
+  /**
+   * Focus mode: highlight a node and its 1-hop neighbors; dim everything else.
+   * Pass null to clear focus and return to the normal full view.
+   */
+  setFocusNode(nodeId) {
+    this._focusNodeId = nodeId || null;
+    this._applyFocus();
+  }
+
+  _applyFocus() {
+    const nodeId = this._focusNodeId;
+
+    // Clear all focus classes
+    for (const [, el] of this._nodeEls) {
+      el.classList.remove('focus-dim');
+    }
+    for (const [, el] of this._edgeEls) {
+      el.classList.remove('focus-dim');
+    }
+
+    if (!nodeId) return;
+
+    // Build 1-hop neighborhood: the focused node + all direct neighbors
+    const neighborhood = new Set([nodeId]);
+    const relevantEdges = new Set();
+
+    for (const [edgeId, el] of this._edgeEls) {
+      const edge = el._edge;
+      if (!edge) continue;
+      if (edge.source === nodeId || edge.target === nodeId) {
+        neighborhood.add(edge.source);
+        neighborhood.add(edge.target);
+        relevantEdges.add(edgeId);
+      }
+    }
+
+    // Dim nodes outside the neighborhood
+    for (const [id, el] of this._nodeEls) {
+      if (!neighborhood.has(id)) el.classList.add('focus-dim');
+    }
+
+    // Dim edges that don't connect neighborhood nodes
+    for (const [edgeId, el] of this._edgeEls) {
+      if (!relevantEdges.has(edgeId)) el.classList.add('focus-dim');
     }
   }
 
@@ -472,6 +540,14 @@ export class SVGGraph {
     label.textContent = truncate(name, 16);
     g.appendChild(label);
 
+    // Service type sub-label (ClusterIP / NodePort / LoadBalancer / Headless)
+    if (node.kind === 'Service') {
+      const svcType = spec.clusterIP === 'None' ? 'Headless' : (spec.type || 'ClusterIP');
+      const typeLabel = svgEl('text', { class: 'node-svc-type', x: 0, y: NODE_R + 19 });
+      typeLabel.textContent = svcType;
+      g.appendChild(typeLabel);
+    }
+
     // Phase dot (for pods / simulated resources)
     if (node.kind === 'Pod' || node.simPhase) {
       const dot = svgEl('circle', {
@@ -507,6 +583,12 @@ export class SVGGraph {
 
     const label = el.querySelector('.node-label');
     if (label) label.textContent = truncate(node.metadata?.name || node.name || '', 16);
+
+    const svcTypeLabel = el.querySelector('.node-svc-type');
+    if (svcTypeLabel) {
+      const svcType = spec.clusterIP === 'None' ? 'Headless' : (spec.type || 'ClusterIP');
+      svcTypeLabel.textContent = svcType;
+    }
   }
 
   _initEdgeTooltip() {
@@ -586,6 +668,14 @@ export class SVGGraph {
 
     g.appendChild(hit);
     g.appendChild(path);
+
+    // Optional edge label (e.g. "signs", "provisions", "ca", "tls")
+    if (edge.label) {
+      const lbl = svgEl('text', { class: 'edge-label' });
+      lbl.textContent = edge.label;
+      g.appendChild(lbl);
+      g._labelEl = lbl;
+    }
 
     // Store edge reference on the group for applyPositions
     g._edge = edge;
@@ -827,6 +917,9 @@ function kindShape(kind) {
     case 'ClusterRoleBinding':    return diamond(NODE_R * 0.85);
     // Infrastructure
     case 'Node':                  return serverShape(NODE_R);
+    // External access pseudo-nodes
+    case 'ExternalClient':    return cloudShape(NODE_R);
+    case 'IngressController': return gatewayShape(NODE_R);
     default:                      return circle(NODE_R);
   }
 }
@@ -920,6 +1013,30 @@ function serverShape(r) {
   // Status LED stripe
   g.appendChild(svgEl('rect', { x: w - 10, y: -h + 4, width: 6, height: 6, rx: 3, ry: 3, class: 'node-led' }));
   return g;
+}
+
+// Cloud shape for ExternalClient (internet pseudo-node)
+function cloudShape(r) {
+  const s = r * 1.05;
+  // Three overlapping arcs forming a cloud silhouette, centered at origin
+  const d = [
+    `M${-s*0.55},${s*0.35}`,
+    `Q${-s*1.05},${s*0.35} ${-s*0.95},${-s*0.05}`,
+    `Q${-s*0.95},${-s*0.55} ${-s*0.35},${-s*0.55}`,
+    `Q${-s*0.25},${-s*0.95} ${s*0.1},${-s*0.85}`,
+    `Q${s*0.45},${-s*1.05} ${s*0.7},${-s*0.6}`,
+    `Q${s*1.05},${-s*0.5} ${s*0.9},${-s*0.05}`,
+    `Q${s*0.95},${s*0.35} ${s*0.55},${s*0.35}`,
+    'Z',
+  ].join(' ');
+  return svgEl('path', { d });
+}
+
+// Gateway/proxy shape for IngressController — forward-pointing arrow body
+function gatewayShape(r) {
+  const w = r * 1.1, h = r * 0.7, tip = r * 1.3;
+  const d = `M${-w},${-h} L${w*0.3},${-h} L${tip},0 L${w*0.3},${h} L${-w},${h} L${-w*0.4},0 Z`;
+  return svgEl('path', { d });
 }
 
 // Edge path: line from edge of src to edge of tgt with slight curve

@@ -313,6 +313,14 @@ func (r *Reconciler) ReconcilePVCs() {
 				pv.Status, _ = json.Marshal(pvStatus)
 				r.store.Add(pv)
 
+				// PVC requested storage from this StorageClass
+				r.store.AddEdge(&models.Edge{
+					ID:     store.EdgeID(pvc.ID, scID, models.EdgeUses),
+					Source: pvc.ID,
+					Target: scID,
+					Type:   models.EdgeUses,
+				})
+
 				// The StorageClass provisioned the PV
 				r.store.AddEdge(&models.Edge{
 					ID:     store.EdgeID(scID, pvID, models.EdgeOwns),
@@ -791,6 +799,89 @@ func (r *Reconciler) completeCronJob(jobID string) {
 		if pod, ok := r.store.Get(e.Target); ok && pod.Kind == models.KindPod {
 			TerminatePod(r.store, pod)
 		}
+	}
+}
+
+// ReconcileExternalAccess creates/removes ExternalClient and IngressController
+// pseudo-nodes to show how external traffic enters the cluster.
+// ExternalClient ("internet") is wired via EdgeRoutes to LoadBalancer/NodePort
+// Services and to the IngressController. The IngressController is wired to each
+// Ingress object, making the full ingress traffic path visible in the graph.
+func (r *Reconciler) ReconcileExternalAccess() {
+	const internetID = "external-internet"
+	const icID = "ingress-controller"
+
+	// Find external-facing services (LoadBalancer or NodePort)
+	var externalSvcs []*models.Node
+	for _, svc := range r.store.FilterByKind(models.KindService) {
+		var spec models.ServiceSpec
+		if err := json.Unmarshal(svc.Spec, &spec); err != nil {
+			continue
+		}
+		if spec.Type == models.ServiceLoadBalancer || spec.Type == models.ServiceNodePort {
+			externalSvcs = append(externalSvcs, svc)
+		}
+	}
+
+	ingresses := r.store.FilterByKind(models.KindIngress)
+
+	// If nothing is external-facing, remove pseudo-nodes and return
+	if len(externalSvcs) == 0 && len(ingresses) == 0 {
+		r.store.Delete(internetID)
+		r.store.Delete(icID)
+		return
+	}
+
+	// Ensure internet pseudo-node exists
+	if _, exists := r.store.Get(internetID); !exists {
+		internet := &models.Node{
+			ID:       internetID,
+			TypeMeta: models.TypeMeta{APIVersion: "pseudo/v1", Kind: models.KindExternalClient},
+			ObjectMeta: models.ObjectMeta{
+				Name: "internet",
+			},
+		}
+		r.store.Add(internet)
+	}
+
+	// Wire internet → each external-facing service (idempotent via deterministic edge ID)
+	for _, svc := range externalSvcs {
+		r.store.AddEdge(&models.Edge{
+			ID:     store.EdgeID(internetID, svc.ID, models.EdgeRoutes),
+			Source: internetID,
+			Target: svc.ID,
+			Type:   models.EdgeRoutes,
+		})
+	}
+
+	// Wire internet → ingress-controller → each Ingress
+	if len(ingresses) > 0 {
+		if _, exists := r.store.Get(icID); !exists {
+			ic := &models.Node{
+				ID:       icID,
+				TypeMeta: models.TypeMeta{APIVersion: "pseudo/v1", Kind: models.KindIngressController},
+				ObjectMeta: models.ObjectMeta{
+					Name: "ingress-nginx",
+				},
+			}
+			r.store.Add(ic)
+		}
+		r.store.AddEdge(&models.Edge{
+			ID:     store.EdgeID(internetID, icID, models.EdgeRoutes),
+			Source: internetID,
+			Target: icID,
+			Type:   models.EdgeRoutes,
+		})
+		for _, ing := range ingresses {
+			r.store.AddEdge(&models.Edge{
+				ID:     store.EdgeID(icID, ing.ID, models.EdgeRoutes),
+				Source: icID,
+				Target: ing.ID,
+				Type:   models.EdgeRoutes,
+			})
+		}
+	} else {
+		r.store.Delete(icID)
 	}
 }
 

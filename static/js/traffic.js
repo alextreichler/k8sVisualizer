@@ -260,5 +260,51 @@ class TrafficSim {
     if (errEl)  errEl.style.color  = session.err > 0 ? 'var(--danger)' : 'var(--success)';
     if (rateEl) rateEl.style.color = parseFloat(pct) > 20 ? 'var(--danger)'
                                    : parseFloat(pct) > 0  ? 'var(--warning)' : 'var(--success)';
+
+    // Update hop breakdown (render once — paths don't change during a session)
+    if (!session._hopHtml) {
+      session._hopHtml = this._buildHopHtml(session.paths[0] || []);
+    }
+    const pathEl = document.getElementById('traffic-path');
+    if (pathEl) pathEl.innerHTML = session._hopHtml;
+  }
+
+  // Build an HTML hop-by-hop breakdown for the representative path.
+  _buildHopHtml(path) {
+    if (!path.length) return '';
+
+    // Detect kube-proxy and CoreDNS in the store for annotation
+    let hasKubeProxy = false;
+    let hasDNS = false;
+    for (const n of this._store.nodes.values()) {
+      const nname = n.metadata?.name || n.name || '';
+      if (n.kind === 'DaemonSet' && nname === 'kube-proxy') hasKubeProxy = true;
+      if ((n.kind === 'Deployment' || n.kind === 'Pod') && nname === 'coredns') hasDNS = true;
+    }
+
+    const lines = [];
+
+    // DNS note when traffic starts at a Service (client uses DNS to resolve ClusterIP)
+    const firstNode = this._store.nodes.get(path[0]);
+    if (hasDNS && firstNode?.kind === 'Service') {
+      lines.push('<span class="hop hop-dns">DNS  CoreDNS resolves name → ClusterIP</span>');
+    }
+
+    for (let i = 0; i < path.length; i++) {
+      const n = this._store.nodes.get(path[i]);
+      if (!n) continue;
+      const nname = n.metadata?.name || n.name || path[i];
+      const kind  = n.kind;
+      const arrow = i === 0 ? '▶' : '→';
+      const cls   = `hop hop-${kind.toLowerCase().replace(/[^a-z]/g, '')}`;
+      lines.push(`<span class="${cls}">${arrow} <em>${kind}</em> ${nname}</span>`);
+
+      // Insert kube-proxy DNAT annotation after Service → Pod transition
+      if (hasKubeProxy && kind === 'Service' && i < path.length - 1) {
+        lines.push('<span class="hop hop-kubeproxy">  ↳ kube-proxy: DNAT ClusterIP → Pod IP</span>');
+      }
+    }
+
+    return lines.join('\n');
   }
 }

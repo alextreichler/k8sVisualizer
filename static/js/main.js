@@ -15,6 +15,32 @@ import { TrafficSim }  from './traffic.js';
 const svg    = document.getElementById('graph-svg');
 const canvas = document.getElementById('canvas');
 
+// ---- View state persistence (hiddenKinds, selectedNamespace) ----
+const VIEW_STATE_KEY = 'k8s-view-state';
+
+function saveViewState() {
+  try {
+    localStorage.setItem(VIEW_STATE_KEY, JSON.stringify({
+      hiddenKinds:       [...store.hiddenKinds],
+      selectedNamespace: store.selectedNamespace,
+    }));
+  } catch { /* storage quota or private-browsing restriction — ignore */ }
+}
+
+function loadViewState() {
+  try {
+    const raw = localStorage.getItem(VIEW_STATE_KEY);
+    if (!raw) return;
+    const state = JSON.parse(raw);
+    if (Array.isArray(state.hiddenKinds)) {
+      for (const k of state.hiddenKinds) store.hiddenKinds.add(k);
+    }
+    if (typeof state.selectedNamespace === 'string') {
+      store.selectedNamespace = state.selectedNamespace;
+    }
+  } catch { /* corrupt storage — ignore */ }
+}
+
 // ---- Create modules ----
 const store = new ClientStore();
 const graph = new SVGGraph(svg);
@@ -97,7 +123,7 @@ interaction.onNodeUnpin((id) => {
   graph.markPinned(id, false);
 });
 
-const controls = new Controls({ store, graph, simulation: sim, interaction });
+const controls = new Controls({ store, graph, simulation: sim, interaction, saveViewState });
 
 // Wire namespace zone drag → layout offsets
 graph.onNsOffsetChange((ns, dx, dy) => {
@@ -168,9 +194,11 @@ store.subscribe((type, data) => {
     if (store.selectedNodeID) {
       graph.markSelected(store.selectedNodeID, true);
     } else {
-      // Deselect all
+      // Deselect all — also clear focus
       for (const n of store.nodes.values()) graph.markSelected(n.id, false);
+      graph.setFocusNode(null);
       panel.hide();
+      _updateStatusBar();
     }
     return;
   }
@@ -182,17 +210,43 @@ interaction.onNodeClick((id) => {
   if (prev) graph.markSelected(prev, false);
 
   if (prev === id) {
+    // Clicking the same node deselects and clears focus
     store.deselect();
+    graph.setFocusNode(null);
+    _updateStatusBar();
     return;
   }
 
   store.select(id);
   graph.markSelected(id, true);
+  graph.setFocusNode(id);
+  _updateStatusBar(id);
   const node = store.nodes.get(id);
   if (node) {
     panel.show(node);
     // Auto-expand the panel if it's hidden
     if (typeof setPanelVisible === 'function') setPanelVisible(true);
+  }
+});
+
+// Click on empty canvas → deselect and clear focus
+// Track pointer-down position to distinguish click from pan
+let _canvasPtrDown = null;
+document.getElementById('graph-svg')?.addEventListener('pointerdown', (e) => {
+  if (!e.target.closest('.node')) _canvasPtrDown = { x: e.clientX, y: e.clientY };
+});
+document.getElementById('graph-svg')?.addEventListener('pointerup', (e) => {
+  if (e.target.closest('.node')) { _canvasPtrDown = null; return; }
+  const down = _canvasPtrDown;
+  _canvasPtrDown = null;
+  if (!down) return;
+  // Only treat as click if the pointer barely moved (not a pan)
+  if (Math.abs(e.clientX - down.x) > 5 || Math.abs(e.clientY - down.y) > 5) return;
+  if (store.selectedNodeID) {
+    graph.markSelected(store.selectedNodeID, false);
+    store.deselect();
+    graph.setFocusNode(null);
+    _updateStatusBar();
   }
 });
 
@@ -972,6 +1026,17 @@ function pulseControlPlane(resourceId) {
   }
 }
 
+// ---- Restore persisted view state ----
+loadViewState();
+// Sync Pods button visual to restored state
+if (store.hiddenKinds.has('Pod')) {
+  const podsBtn = document.getElementById('btn-hide-pods');
+  if (podsBtn) {
+    podsBtn.classList.add('active');
+    podsBtn.title = 'Show pod nodes (P)';
+  }
+}
+
 // ---- Controls ----
 await controls.init();
 
@@ -1722,6 +1787,13 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // P — toggle pod visibility
+  if (e.key === 'p' || e.key === 'P') {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    document.getElementById('btn-hide-pods')?.click();
+    return;
+  }
+
   // Escape — close modals / search / deselect
   if (e.key === 'Escape') {
     if (shortcutsModal?.style.display !== 'none') { closeShortcuts(); return; }
@@ -1730,12 +1802,57 @@ document.addEventListener('keydown', (e) => {
       document.getElementById('resource-modal').style.display = 'none';
       return;
     }
-    // Deselect node
+    // Deselect node and clear focus
     if (store.selectedNodeID) {
       graph.markSelected(store.selectedNodeID, false);
       store.deselect();
+      graph.setFocusNode(null);
+      _updateStatusBar();
     }
     return;
   }
+});
+
+// ---- Status bar helper ----
+const _statusbarEl = document.getElementById('statusbar');
+const _statusbarDefault = _statusbarEl?.textContent || '';
+
+function _updateStatusBar(focusedId) {
+  if (!_statusbarEl) return;
+  if (focusedId) {
+    const node = store.nodes.get(focusedId);
+    const name = node?.metadata?.name || node?.name || focusedId;
+    _statusbarEl.textContent = `Focused: ${name}  ·  showing direct connections  ·  click elsewhere or Esc to exit`;
+  } else {
+    _statusbarEl.textContent = _statusbarDefault;
+  }
+}
+
+// ---- Hide Pods toggle ----
+const _hidePodsBtnEl = document.getElementById('btn-hide-pods');
+_hidePodsBtnEl?.addEventListener('click', () => {
+  const hidden = store.hiddenKinds.has('Pod');
+  if (hidden) {
+    store.hiddenKinds.delete('Pod');
+    _hidePodsBtnEl.classList.remove('active');
+    _hidePodsBtnEl.title = 'Hide pod nodes (P)';
+  } else {
+    store.hiddenKinds.add('Pod');
+    _hidePodsBtnEl.classList.add('active');
+    _hidePodsBtnEl.title = 'Show pod nodes (P)';
+    // If a pod was selected, deselect and clear focus
+    const sel = store.nodes.get(store.selectedNodeID);
+    if (sel?.kind === 'Pod') {
+      graph.markSelected(store.selectedNodeID, false);
+      store.deselect();
+      graph.setFocusNode(null);
+      _updateStatusBar();
+    }
+  }
+  store._notify('snapshot');
+  saveViewState();
+  // Sync sidebar kind-filter checkbox if present
+  const cb = document.getElementById('kf-Pod');
+  if (cb) cb.checked = !store.hiddenKinds.has('Pod');
 });
 

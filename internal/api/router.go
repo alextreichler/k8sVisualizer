@@ -17,7 +17,8 @@ func NewRouter(s *store.ClusterStore, broker *SSEBroker, staticFS fs.FS, cfg Con
 	mux := http.NewServeMux()
 
 	// Static files — served from embedded FS, no disk access required.
-	mux.Handle("/", http.FileServer(http.FS(staticFS)))
+	// noCacheOn404 prevents browsers from caching 404 responses across deployments.
+	mux.Handle("/", noCacheOn404(http.FileServer(http.FS(staticFS))))
 
 	// Graph
 	mux.HandleFunc("/api/graph", h.HandleGraph)
@@ -119,6 +120,26 @@ func corsMiddleware(cfg Config, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// noCacheOn404 wraps a handler and adds Cache-Control: no-store to 404 responses,
+// preventing browsers from caching missing-file errors across deployments.
+func noCacheOn404(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nw := &notFoundCacheWriter{ResponseWriter: w}
+		next.ServeHTTP(nw, r)
+	})
+}
+
+type notFoundCacheWriter struct {
+	http.ResponseWriter
+}
+
+func (w *notFoundCacheWriter) WriteHeader(code int) {
+	if code == http.StatusNotFound {
+		w.ResponseWriter.Header().Set("Cache-Control", "no-store")
+	}
+	w.ResponseWriter.WriteHeader(code)
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {

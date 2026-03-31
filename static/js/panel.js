@@ -44,6 +44,9 @@ const KIND_DESCRIPTIONS = {
   // Storage / Quota
   StorageClass:   'Defines a class of storage and the CSI provisioner that creates volumes dynamically (e.g. <code>ebs.csi.aws.com</code>, <code>pd.csi.storage.gke.io</code>). PVCs reference a StorageClass by name to request a specific type of disk. The StorageClass marked <em>default</em> is used when a PVC omits <code>storageClassName</code>. Parameters map to CSI driver-specific options (disk type, IOPS tier, encryption).',
   LimitRange:     'Sets per-Pod, per-Container, or per-PVC default resource requests/limits and minimum/maximum bounds within a namespace. When a container spec omits resource requests, the LimitRange <code>defaultRequest</code> is injected by the admission controller. This is required for ResourceQuota CPU/memory enforcement — Kubernetes will not admit a Pod without resource requests when a CPU or memory quota is active.',
+  // External access pseudo-nodes (simulator-only)
+  ExternalClient:    '<em>Simulator pseudo-node</em> — represents an external client or the public internet. Automatically appears whenever a <em>LoadBalancer</em> or <em>NodePort</em> Service or an <em>Ingress</em> resource is present. Wired via <code>routes</code> edges to show how traffic enters the cluster from outside. Not a real Kubernetes resource.',
+  IngressController: '<em>Simulator pseudo-node</em> — represents the Ingress Controller (typically <code>ingress-nginx</code> or Traefik) running inside the cluster. Sits between the internet and your Ingress rules. The controller is a Pod (or Deployment) that watches Ingress objects and programs the underlying proxy. It reads Ingress rules, terminates TLS (using Secrets), and forwards HTTP/S traffic to the target Service. Not a real Kubernetes resource — click an Ingress node to see the actual routing rules.',
 };
 
 const COMPONENT_DESCRIPTIONS = {

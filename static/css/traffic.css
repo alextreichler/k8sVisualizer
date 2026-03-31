@@ -165,6 +165,40 @@
   transform: translate(-50%, -50%);
 }
 
+/* ── Hop breakdown list ───────────────────────────────────────────────────── */
+.traffic-hop-list {
+  padding: 6px 12px 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+  font-family: var(--mono);
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-height: 130px;
+  overflow-y: auto;
+}
+.traffic-hop-list:empty { display: none; }
+.hop { display: block; white-space: nowrap; }
+.hop em { font-style: normal; color: var(--text); font-weight: 600; }
+.hop-dns        { color: #4dd0e1; }
+.hop-externalclient  { color: #00e5ff; }
+.hop-ingresscontroller { color: #ffab40; }
+.hop-ingress    { color: #ff7043; }
+.hop-service    { color: #9c68e0; }
+.hop-kubeproxy  { color: #78909c; font-size: 9px; }
+.hop-pod        { color: #4caf82; }
+
+[data-theme="light"] .hop em          { color: #1a2035; }
+[data-theme="light"] .hop-dns         { color: #0e7490; }
+[data-theme="light"] .hop-externalclient { color: #0891b2; }
+[data-theme="light"] .hop-ingresscontroller { color: #d97706; }
+[data-theme="light"] .hop-ingress     { color: #c2410c; }
+[data-theme="light"] .hop-service     { color: #7c3aed; }
+[data-theme="light"] .hop-kubeproxy   { color: #64748b; }
+[data-theme="light"] .hop-pod         { color: #15803d; }
+
 /* Light theme */
 [data-theme="light"] #traffic-overlay {
   box-shadow: 0 4px 24px rgba(0,0,0,0.15);

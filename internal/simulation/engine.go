@@ -53,4 +53,5 @@ func (e *Engine) tick() {
 	e.reconciler.ReconcileServiceSelectors()
 	e.reconciler.ReconcileCronJobs()
 	e.reconciler.ReconcileCustomResources()
+	e.reconciler.ReconcileExternalAccess()
 }

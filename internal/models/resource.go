@@ -55,6 +55,10 @@ const (
 	KindLimitRange    = "LimitRange"
 	KindPriorityClass = "PriorityClass"
 	KindEndpointSlice = "EndpointSlice"
+
+	// Pseudo-nodes: not real K8s resources, added by the simulator to show external access paths.
+	KindExternalClient    = "ExternalClient"    // represents the internet / external client
+	KindIngressController = "IngressController" // represents the nginx/Traefik ingress controller pod
 )
 
 // PodPhase mirrors corev1.PodPhase

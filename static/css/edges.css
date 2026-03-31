@@ -54,5 +54,23 @@
   display: block;
 }
 
+/* ---- Edge labels ---- */
+.edge-label {
+  font-size: 9px;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-weight: 600;
+  fill: rgba(200, 210, 230, 0.70);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+[data-theme="light"] .edge-label {
+  fill: rgba(60, 70, 100, 0.65);
+}
+/* Dim edge labels along with their edge when in focus mode */
+.edge-group.focus-dim .edge-label { opacity: 0; }
+
 /* ---- Arrowheads (defined in SVG <defs>) ---- */
 /* colors are set via fill on the marker element in graph.js */

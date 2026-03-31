@@ -3,11 +3,12 @@
 import { api } from './api.js';
 
 export class Controls {
-  constructor({ store, graph, simulation, interaction }) {
+  constructor({ store, graph, simulation, interaction, saveViewState }) {
     this._store = store;
     this._graph = graph;
     this._sim = simulation;
     this._interaction = interaction;
+    this._saveViewState = saveViewState || (() => {});
     this._editingNode = null;
   }
 
@@ -301,6 +302,7 @@ export class Controls {
     document.querySelectorAll('.ns-pill').forEach(p => p.classList.remove('active'));
     pill.classList.add('active');
     this._store._notify('snapshot'); // trigger re-render
+    this._saveViewState();
   }
 
   _refreshKindFilters() {
@@ -321,6 +323,7 @@ export class Controls {
         if (cb.checked) current.delete(kind);
         else current.add(kind);
         this._store._notify('snapshot');
+        this._saveViewState();
       });
       const lbl = document.createElement('label');
       lbl.htmlFor = `kf-${kind}`;

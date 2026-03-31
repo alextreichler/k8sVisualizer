@@ -14,12 +14,12 @@ import (
 // HelmRelease; useFlux=false (default) uses the v2.x direct Go-based reconciler.
 // onStep is called after each step so the caller can broadcast scenario.step events.
 func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, onStep func(i, total int, label string)) {
-	// Base: 52 steps (includes post-install job for Layer 3 config)
+	// Base: 58 steps (includes cert-manager TLS chain + post-install job for Layer 3 config)
 	// flux path adds 3 extra steps (HelmRepository + HelmRelease + sync notice)
 	// topic/user/schema CRs add 7 extra steps
-	totalBase := 59
+	totalBase := 65
 	if useFlux {
-		totalBase = 62
+		totalBase = 68
 	}
 	total := totalBase
 
@@ -41,6 +41,9 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 		"sts-redpanda", "cr-redpanda",
 		"pod-redpanda-operator", "rs-redpanda-operator", "deploy-redpanda-operator",
 		"ns-redpanda",
+		// cert-manager TLS chain
+		"issuer-redpanda-selfsigned", "cert-redpanda-root", "secret-redpanda-root-ca",
+		"issuer-redpanda-root", "cert-redpanda-tls", "secret-redpanda-tls",
 		// post-install job and cluster config cm (Layer 3)
 		"cm-redpanda-cluster-config", "job-post-install",
 		// flux resources
@@ -162,6 +165,85 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 		s.AddEdge(edge(redpandaCR.ID, redpandaSecret.ID, models.EdgeOwns, ""))
 	})
 
+	// ── Phase 3b: cert-manager TLS chain ─────────────────────────────────────
+	// Redpanda uses cert-manager to issue mTLS certs for broker-to-broker RPC
+	// (port 33145) and TLS for Kafka (:9093), Admin API (:9644), Schema Registry
+	// (:8081), and Pandaproxy (:8082). The chain is: selfsigned-issuer → root CA
+	// cert → CA-backed issuer → cluster TLS cert → tls Secret.
+	step(24, 400*time.Millisecond, "Operator: cert-manager detected — provisioning TLS certificate chain (broker mTLS + client TLS for Kafka :9093, Admin :9644, Schema Registry :8081)", nil)
+
+	issuerSelfSigned := node("issuer-redpanda-selfsigned", models.KindIssuer, "cert-manager.io/v1", "redpanda-selfsigned", "redpanda",
+		labels("app.kubernetes.io/name", "redpanda", "app.kubernetes.io/managed-by", "redpanda-operator"),
+		spec(models.ConfigMapSpec{Data: map[string]string{
+			"spec.selfSigned": "{}",
+			"purpose":         "bootstrap — issues the root CA certificate only",
+		}}))
+	step(25, 400*time.Millisecond, "+ issuer.cert-manager.io/redpanda-selfsigned created  (self-signed bootstrap issuer — used only to sign the root CA cert)", func() {
+		s.Add(issuerSelfSigned)
+		s.AddEdge(edge(redpandaCR.ID, issuerSelfSigned.ID, models.EdgeOwns, ""))
+	})
+
+	certRoot := node("cert-redpanda-root", models.KindCertificate, "cert-manager.io/v1", "redpanda-root-certificate", "redpanda",
+		labels("app.kubernetes.io/name", "redpanda", "app.kubernetes.io/managed-by", "redpanda-operator"),
+		spec(models.ConfigMapSpec{Data: map[string]string{
+			"spec.isCA":                "true",
+			"spec.secretName":          "redpanda-root-certificate",
+			"spec.duration":            "87600h (10 years)",
+			"spec.privateKey.algorithm": "ECDSA",
+			"spec.issuerRef.name":      "redpanda-selfsigned",
+			"spec.issuerRef.kind":      "Issuer",
+		}}))
+	secretRootCA := node("secret-redpanda-root-ca", models.KindSecret, "v1", "redpanda-root-certificate", "redpanda",
+		labels("app.kubernetes.io/name", "redpanda"),
+		spec(models.ConfigMapSpec{}))
+	step(26, 600*time.Millisecond, "cert-manager: certificate/redpanda-root-certificate → secret/redpanda-root-certificate  (CA cert provisioned and stored — 10yr validity)", func() {
+		s.Add(certRoot)
+		s.Add(secretRootCA)
+		s.AddEdge(edge(redpandaCR.ID, certRoot.ID, models.EdgeOwns, ""))
+		s.AddEdge(edge(issuerSelfSigned.ID, certRoot.ID, models.EdgeOwns, "signs"))
+		s.AddEdge(edge(certRoot.ID, secretRootCA.ID, models.EdgeOwns, "provisions"))
+	})
+
+	issuerRoot := node("issuer-redpanda-root", models.KindIssuer, "cert-manager.io/v1", "redpanda-root-issuer", "redpanda",
+		labels("app.kubernetes.io/name", "redpanda", "app.kubernetes.io/managed-by", "redpanda-operator"),
+		spec(models.ConfigMapSpec{Data: map[string]string{
+			"spec.ca.secretName": "redpanda-root-certificate",
+			"purpose":            "signs all cluster TLS certificates",
+		}}))
+	step(27, 400*time.Millisecond, "+ issuer.cert-manager.io/redpanda-root-issuer created  (CA-backed issuer reading root CA from secret/redpanda-root-certificate)", func() {
+		s.Add(issuerRoot)
+		s.AddEdge(edge(redpandaCR.ID, issuerRoot.ID, models.EdgeOwns, ""))
+		s.AddEdge(edge(secretRootCA.ID, issuerRoot.ID, models.EdgeMounts, "ca"))
+	})
+
+	certTLS := node("cert-redpanda-tls", models.KindCertificate, "cert-manager.io/v1", "redpanda", "redpanda",
+		labels("app.kubernetes.io/name", "redpanda", "app.kubernetes.io/managed-by", "redpanda-operator"),
+		spec(models.ConfigMapSpec{Data: map[string]string{
+			"spec.secretName":      "redpanda-tls",
+			"spec.duration":        "43800h (5 years)",
+			"spec.renewBefore":     "360h (15 days before expiry)",
+			"spec.dnsNames[0]":     "redpanda-0.redpanda.redpanda.svc.cluster.local",
+			"spec.dnsNames[1]":     "redpanda-1.redpanda.redpanda.svc.cluster.local",
+			"spec.dnsNames[2]":     "redpanda-2.redpanda.redpanda.svc.cluster.local",
+			"spec.dnsNames[3]":     "redpanda.redpanda.svc.cluster.local",
+			"spec.issuerRef.name":  "redpanda-root-issuer",
+			"spec.issuerRef.kind":  "Issuer",
+		}}))
+	step(28, 500*time.Millisecond, "+ certificate.cert-manager.io/redpanda created  (SANs: all 3 broker pods + cluster FQDN — issued by redpanda-root-issuer)", func() {
+		s.Add(certTLS)
+		s.AddEdge(edge(redpandaCR.ID, certTLS.ID, models.EdgeOwns, ""))
+		s.AddEdge(edge(issuerRoot.ID, certTLS.ID, models.EdgeOwns, "signs"))
+	})
+
+	secretTLS := node("secret-redpanda-tls", models.KindSecret, "v1", "redpanda-tls", "redpanda",
+		labels("app.kubernetes.io/name", "redpanda"),
+		spec(models.ConfigMapSpec{}))
+	step(29, 500*time.Millisecond, "cert-manager: secret/redpanda-tls created  (tls.crt + tls.key — mounted into every broker pod at /etc/tls/certs/)", func() {
+		s.Add(secretTLS)
+		s.AddEdge(edge(certTLS.ID, secretTLS.ID, models.EdgeOwns, "provisions"))
+		s.AddEdge(edge(redpandaCR.ID, secretTLS.ID, models.EdgeOwns, ""))
+	})
+
 	headlessSvc := node("svc-redpanda-headless", models.KindService, "v1", "redpanda", "redpanda",
 		labels("app.kubernetes.io/name", "redpanda"),
 		spec(models.ServiceSpec{
@@ -170,7 +252,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 			Selector: map[string]string{"app.kubernetes.io/name": "redpanda"},
 			Ports:    []models.ServicePort{{Name: "kafka", Protocol: "TCP", Port: 9092, TargetPort: 9092}},
 		}))
-	step(24, 300*time.Millisecond, "+ service/redpanda (headless, ClusterIP=None) — stable DNS: redpanda-N.redpanda.redpanda.svc.cluster.local", func() {
+	step(30, 300*time.Millisecond, "+ service/redpanda (headless, ClusterIP=None) — stable DNS: redpanda-N.redpanda.redpanda.svc.cluster.local", func() {
 		s.Add(headlessSvc)
 		s.AddEdge(edge(redpandaCR.ID, headlessSvc.ID, models.EdgeOwns, ""))
 	})
@@ -182,7 +264,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 			Selector: map[string]string{"app.kubernetes.io/name": "redpanda"},
 			Ports:    []models.ServicePort{{Name: "kafka", Protocol: "TCP", Port: 9094, TargetPort: 9094, NodePort: 30092}},
 		}))
-	step(25, 300*time.Millisecond, "+ service/redpanda-external (NodePort:30092) — external clients connect here via any node IP", func() {
+	step(31, 300*time.Millisecond, "+ service/redpanda-external (NodePort:30092) — external clients connect here via any node IP", func() {
 		s.Add(extSvc)
 		s.AddEdge(edge(redpandaCR.ID, extSvc.ID, models.EdgeOwns, ""))
 	})
@@ -193,12 +275,12 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 	// Mark scenario-managed so the reconciler doesn't race to create pods while the
 	// scenario is still stepping through ordered pod creation.
 	redpandaSTS.Annotations = map[string]string{"k8svisualizer/scenario-managed": "true"}
-	step(26, 400*time.Millisecond, "+ statefulset.apps/redpanda created  [0/3 ready]", func() {
+	step(32, 400*time.Millisecond, "+ statefulset.apps/redpanda created  [0/3 ready]", func() {
 		s.Add(redpandaSTS)
 		s.AddEdge(edge(redpandaCR.ID, redpandaSTS.ID, models.EdgeOwns, ""))
 	})
 
-	step(27, 200*time.Millisecond, "StatefulSet: updateStrategy=RollingUpdate, podManagementPolicy=OrderedReady — pods start strictly in order", nil)
+	step(33, 200*time.Millisecond, "StatefulSet: updateStrategy=RollingUpdate, podManagementPolicy=OrderedReady — pods start strictly in order", nil)
 
 	// ── Phase 4: ordered StatefulSet pod startup (pod 0 → 1 → 2) ──────────
 	for i := 0; i < 3; i++ {
@@ -209,7 +291,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 		podName := fmt.Sprintf("redpanda-%d", ii)
 		pvcName := fmt.Sprintf("datadir-redpanda-%d", ii)
 		pvName  := fmt.Sprintf("pv-redpanda-%d", ii)
-		stepBase := 28 + ii*6
+		stepBase := 34 + ii*6
 
 		var orderLabel string
 		switch ii {
@@ -251,6 +333,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 			s.AddEdge(edge(pvcID, pvID, models.EdgeBound, ""))
 			s.AddEdge(edge(podID, redpandaCM.ID, models.EdgeMounts, "config"))
 			s.AddEdge(edge(podID, redpandaSecret.ID, models.EdgeMounts, "sasl"))
+			s.AddEdge(edge(podID, secretTLS.ID, models.EdgeMounts, "tls"))
 		})
 
 		step(stepBase+3, 500*time.Millisecond, fmt.Sprintf("  pod/%s: init[redpanda-configurator] — generating advertised address, seed-server list, SASL config...", podName), nil)
@@ -281,15 +364,15 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 		})
 	}
 
-	step(46, 400*time.Millisecond, "StatefulSet redpanda: 3/3 ready  (Raft quorum: 3 voters, min-ISR=2)", func() {
+	step(52, 400*time.Millisecond, "StatefulSet redpanda: 3/3 ready  (Raft quorum: 3 voters, min-ISR=2)", func() {
 		// Hand off STS management to the reconciler now that all pods are in place.
 		if sts, ok := s.Get(redpandaSTS.ID); ok {
 			delete(sts.Annotations, "k8svisualizer/scenario-managed")
 			s.Update(sts)
 		}
 	})
-	step(47, 200*time.Millisecond, "Redpanda cluster deployment complete ✓", nil)
-	step(48, 0, "$ rpk cluster info --brokers redpanda-0.redpanda.redpanda.svc.cluster.local:9092", nil)
+	step(53, 200*time.Millisecond, "Redpanda cluster deployment complete ✓", nil)
+	step(54, 0, "$ rpk cluster info --brokers redpanda-0.redpanda.redpanda.svc.cluster.local:9092", nil)
 
 	// ── Layer 3: post-install Job applies config.cluster via Admin API ────
 	// This is the third config layer — values in values.yaml config.cluster/tunable
@@ -305,7 +388,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 			"kafka_batch_max_bytes":          "1048576",
 			"topic_partitions_per_shard":     "1000",
 		}}))
-	step(49, 400*time.Millisecond, "+ configmap/redpanda-cluster-config created  (Layer 3: config.cluster + config.tunable values from values.yaml — applied via Admin API, no restart needed)", func() {
+	step(55, 400*time.Millisecond, "+ configmap/redpanda-cluster-config created  (Layer 3: config.cluster + config.tunable values from values.yaml — applied via Admin API, no restart needed)", func() {
 		s.Add(clusterConfigCM)
 		s.AddEdge(edge(redpandaCR.ID, clusterConfigCM.ID, models.EdgeOwns, ""))
 	})
@@ -318,7 +401,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 			"target":  "PUT /v1/cluster_config on Admin API :9644",
 			"note":    "These settings are live-tunable — no pod restart required",
 		}}))
-	step(50, 500*time.Millisecond, "+ job.batch/redpanda-post-install created  (Helm post-install hook — calls PUT /v1/cluster_config to apply Layer 3 config properties)", func() {
+	step(56, 500*time.Millisecond, "+ job.batch/redpanda-post-install created  (Helm post-install hook — calls PUT /v1/cluster_config to apply Layer 3 config properties)", func() {
 		s.Add(postInstallJob)
 		s.AddEdge(edge(redpandaCR.ID, postInstallJob.ID, models.EdgeOwns, ""))
 		s.AddEdge(edge(postInstallJob.ID, clusterConfigCM.ID, models.EdgeMounts, "config"))
@@ -327,8 +410,8 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 			s.AddEdge(edge(postInstallJob.ID, fmt.Sprintf("pod-redpanda-%d", i), models.EdgeRoutes, "Admin :9644"))
 		}
 	})
-	step(51, 600*time.Millisecond, "post-install: PUT /v1/cluster_config → {log_segment_size_min, log_segment_size_max, kafka_batch_max_bytes, ...} applied ✓", nil)
-	step(52, 200*time.Millisecond, "post-install job complete — Job will be garbage-collected after TTL", nil)
+	step(57, 600*time.Millisecond, "post-install: PUT /v1/cluster_config → {log_segment_size_min, log_segment_size_max, kafka_batch_max_bytes, ...} applied ✓", nil)
+	step(58, 200*time.Millisecond, "post-install job complete — Job will be garbage-collected after TTL", nil)
 
 	// ── Flux path: show HelmRepository + HelmRelease (v0.x operator) ─────
 	if useFlux {
@@ -338,7 +421,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 				"url":      "https://charts.redpanda.com",
 				"interval": "30m",
 			}}))
-		step(53, 400*time.Millisecond, "+ helmrepository.source.toolkit.fluxcd.io/redpanda created  (FluxCD source — points to charts.redpanda.com)", func() {
+		step(59, 400*time.Millisecond, "+ helmrepository.source.toolkit.fluxcd.io/redpanda created  (FluxCD source — points to charts.redpanda.com)", func() {
 			s.Add(helmRepo)
 			s.AddEdge(edge(operatorDeploy.ID, helmRepo.ID, models.EdgeOwns, ""))
 		})
@@ -352,19 +435,19 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 				"values-from":        "Redpanda CR .spec.clusterSpec",
 				"upgrade.remediation.strategy": "rollback",
 			}}))
-		step(54, 500*time.Millisecond, "+ helmrelease.helm.toolkit.fluxcd.io/redpanda created  (FluxCD will sync chart values from the CR)", func() {
+		step(60, 500*time.Millisecond, "+ helmrelease.helm.toolkit.fluxcd.io/redpanda created  (FluxCD will sync chart values from the CR)", func() {
 			s.Add(helmRelease)
 			s.AddEdge(edge(helmRepo.ID, helmRelease.ID, models.EdgeOwns, "source"))
 			s.AddEdge(edge(redpandaCR.ID, helmRelease.ID, models.EdgeOwns, "values"))
 		})
-		step(55, 300*time.Millisecond, "FluxCD HelmRelease reconciled — Helm upgrade applied  (CR .spec.clusterSpec → chart values → running cluster)", nil)
+		step(61, 300*time.Millisecond, "FluxCD HelmRelease reconciled — Helm upgrade applied  (CR .spec.clusterSpec → chart values → running cluster)", nil)
 	}
 
 	// ── Phase 5: Operator-managed CRDs — Topic, User, Schema ─────────────
 	// These show how the operator manages Redpanda resources declaratively.
-	topicOffset := 53
+	topicOffset := 59
 	if useFlux {
-		topicOffset = 56
+		topicOffset = 62
 	}
 
 	topicTx := node("cr-topic-transactions", models.KindRedpandaTopic, "cluster.redpanda.com/v1alpha2", "transactions", "redpanda",

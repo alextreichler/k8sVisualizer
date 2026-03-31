@@ -41,6 +41,9 @@
 .node-Job            .node-shape { fill: #2a2a1a; stroke: #cddc39; stroke-width: 1.5; }
 /* CustomResource — operator-managed CRD instances (e.g. Redpanda CR) */
 .node-CustomResource .node-shape { fill: #2a1400; stroke: #ff8f00; stroke-width: 2; filter: drop-shadow(0 0 4px rgba(255,143,0,0.35)); }
+/* External access pseudo-nodes */
+.node-ExternalClient    .node-shape { fill: #003a3a; stroke: #00e5ff; stroke-width: 2; stroke-dasharray: 4 2; filter: drop-shadow(0 0 5px rgba(0,229,255,0.35)); }
+.node-IngressController .node-shape { fill: #2a1a00; stroke: #ffab40; stroke-width: 2; filter: drop-shadow(0 0 4px rgba(255,171,64,0.35)); }
 .node-Namespace      .node-bg   { fill: rgba(30, 40, 70, 0.2); }
 
 /* ---- Node labels ---- */
@@ -65,6 +68,20 @@
   font-weight: 700;
   letter-spacing: 0.03em;
 }
+
+/* ---- Service type sub-label ---- */
+.node-svc-type {
+  fill: rgba(200, 170, 255, 0.75);
+  font-size: 8px;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  text-anchor: middle;
+  dominant-baseline: hanging;
+  pointer-events: none;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+[data-theme="light"] .node-svc-type { fill: rgba(100, 60, 180, 0.75); }
 
 /* ---- Phase indicator dot (top-right of node) ---- */
 .phase-dot {
@@ -155,6 +172,8 @@
 [data-theme="light"] .node-CronJob .node-shape             { fill: #d1fae5; stroke: #065f46; }
 [data-theme="light"] .node-Job .node-shape                 { fill: #ecfdf5; stroke: #047857; }
 [data-theme="light"] .node-CustomResource .node-shape      { fill: #fff7ed; stroke: #c2410c; filter: drop-shadow(0 0 4px rgba(194,65,12,0.25)); }
+[data-theme="light"] .node-ExternalClient    .node-shape  { fill: #ecfeff; stroke: #0891b2; stroke-dasharray: 4 2; filter: drop-shadow(0 0 4px rgba(8,145,178,0.2)); }
+[data-theme="light"] .node-IngressController .node-shape  { fill: #fff7ed; stroke: #d97706; filter: drop-shadow(0 0 4px rgba(217,119,6,0.2)); }
 [data-theme="light"] .node-ServiceAccount .node-shape      { fill: #f0fdf4; stroke: #16a34a; }
 [data-theme="light"] .node-Role .node-shape                { fill: #fdf4ff; stroke: #9333ea; }
 [data-theme="light"] .node-ClusterRole .node-shape         { fill: #fdf4ff; stroke: #7c3aed; }
@@ -188,3 +207,7 @@
 [data-theme="light"] .node.filter-match {
   filter: brightness(0.88) drop-shadow(0 0 8px rgba(37,99,235,0.5)) !important;
 }
+
+/* Focus mode — dim everything not adjacent to the selected node */
+.node.focus-dim { opacity: 0.08 !important; transition: opacity 0.2s; pointer-events: none; }
+.edge-group.focus-dim { opacity: 0.04 !important; transition: opacity 0.2s; pointer-events: none; }

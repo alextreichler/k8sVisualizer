@@ -33,6 +33,7 @@
   <div class="header-sep"></div>
 
   <button class="toolbar-btn" id="btn-export" title="Export cluster as YAML (Ctrl+E)">↓ Export</button>
+  <button class="toolbar-btn btn-secondary" id="btn-hide-pods" title="Toggle pod visibility (P)">Pods</button>
   <button class="toolbar-btn btn-secondary" id="btn-shortcuts" title="Keyboard shortcuts (?)">⌨ Keys</button>
   <button class="toolbar-btn btn-secondary" id="btn-guided-mode" title="Toggle guided mode (G)">🎓 Guide</button>
   <button class="toolbar-btn btn-secondary" id="btn-theme" title="Toggle light/dark (Ctrl+T)">☀ Light</button>
@@ -414,6 +415,7 @@
       <input type="range" id="traffic-rps-slider" min="1" max="20" value="5">
       <span id="traffic-rps-val">5</span>
     </div>
+    <div id="traffic-path" class="traffic-hop-list"></div>
   </div>
 
   <!-- Guided mode panel (floating, bottom-center of canvas) -->
