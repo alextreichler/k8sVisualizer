@@ -41,6 +41,9 @@
 .node-Job            .node-shape { fill: #2a2a1a; stroke: #cddc39; stroke-width: 1.5; }
 /* CustomResource — operator-managed CRD instances (e.g. Redpanda CR) */
 .node-CustomResource .node-shape { fill: #2a1400; stroke: #ff8f00; stroke-width: 2; filter: drop-shadow(0 0 4px rgba(255,143,0,0.35)); }
+/* Istio CRDs */
+.node-VirtualService  .node-shape { fill: #003a3a; stroke: #00bcd4; stroke-width: 1.5; filter: drop-shadow(0 0 4px rgba(0,188,212,0.35)); }
+.node-DestinationRule .node-shape { fill: #1a0a2e; stroke: #ab47bc; stroke-width: 1.5; filter: drop-shadow(0 0 4px rgba(171,71,188,0.35)); }
 /* External access pseudo-nodes */
 .node-ExternalClient    .node-shape { fill: #003a3a; stroke: #00e5ff; stroke-width: 2; stroke-dasharray: 4 2; filter: drop-shadow(0 0 5px rgba(0,229,255,0.35)); }
 .node-IngressController .node-shape { fill: #2a1a00; stroke: #ffab40; stroke-width: 2; filter: drop-shadow(0 0 4px rgba(255,171,64,0.35)); }
@@ -173,6 +176,8 @@
 [data-theme="light"] .node-CronJob .node-shape             { fill: #d1fae5; stroke: #065f46; }
 [data-theme="light"] .node-Job .node-shape                 { fill: #ecfdf5; stroke: #047857; }
 [data-theme="light"] .node-CustomResource .node-shape      { fill: #fff7ed; stroke: #c2410c; filter: drop-shadow(0 0 4px rgba(194,65,12,0.25)); }
+[data-theme="light"] .node-VirtualService  .node-shape  { fill: #ecfeff; stroke: #0891b2; filter: drop-shadow(0 0 4px rgba(8,145,178,0.2)); }
+[data-theme="light"] .node-DestinationRule .node-shape  { fill: #fdf4ff; stroke: #9333ea; filter: drop-shadow(0 0 4px rgba(147,51,234,0.2)); }
 [data-theme="light"] .node-ExternalClient    .node-shape  { fill: #ecfeff; stroke: #0891b2; stroke-dasharray: 4 2; filter: drop-shadow(0 0 4px rgba(8,145,178,0.2)); }
 [data-theme="light"] .node-IngressController .node-shape  { fill: #fff7ed; stroke: #d97706; filter: drop-shadow(0 0 4px rgba(217,119,6,0.2)); }
 [data-theme="light"] .node-ServiceAccount .node-shape      { fill: #f0fdf4; stroke: #16a34a; }

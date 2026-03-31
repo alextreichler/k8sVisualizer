@@ -32,11 +32,23 @@
 
   <div class="header-sep"></div>
 
-  <button class="toolbar-btn" id="btn-export" title="Export cluster as YAML (Ctrl+E)">↓ Export</button>
+  <button class="toolbar-btn" id="btn-export" title="Export cluster as YAML (Ctrl+E)">↓ YAML</button>
+  <button class="toolbar-btn" id="btn-export-svg" title="Export graph as SVG/PNG">↓ SVG</button>
   <button class="toolbar-btn btn-secondary" id="btn-hide-pods" title="Toggle pod visibility (P)">Pods</button>
   <button class="toolbar-btn btn-secondary" id="btn-shortcuts" title="Keyboard shortcuts (?)">⌨ Keys</button>
   <button class="toolbar-btn btn-secondary" id="btn-guided-mode" title="Toggle guided mode (G)">🎓 Guide</button>
   <button class="toolbar-btn btn-secondary" id="btn-theme" title="Toggle light/dark (Ctrl+T)">☀ Light</button>
+
+  <div class="header-sep"></div>
+
+  <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">Speed</span>
+  <div class="speed-btns" id="speed-btns">
+    <button class="speed-btn" data-speed="0.25" title="0.25× speed">¼×</button>
+    <button class="speed-btn" data-speed="0.5"  title="0.5× speed">½×</button>
+    <button class="speed-btn active" data-speed="1"    title="Normal speed">1×</button>
+    <button class="speed-btn" data-speed="2"    title="2× speed">2×</button>
+    <button class="speed-btn" data-speed="5"    title="5× speed">5×</button>
+  </div>
 
   <div class="spacer"></div>
 
@@ -167,6 +179,7 @@
         <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-scenario-hpa">▶ HPA Demo (Autoscale on CPU)</button>
         <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-scenario-rolling">▶ Rolling Update</button>
         <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-scenario-nodedrain">▶ Node Drain & Upgrade</button>
+        <button class="toolbar-btn scenario-btn sidebar-btn" id="btn-scenario-istio" title="Deploy Istio service mesh with VirtualService canary routing">▶ Istio Service Mesh</button>
       </div>
       <div id="scenario-log" class="scenario-log" style="display:none"></div>
     </div>

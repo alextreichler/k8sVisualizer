@@ -509,6 +509,7 @@ export class Terminal {
 
   _podReady(n) {
     const phase = n.simPhase || '';
+    if (phase === 'Initializing')         return 'Init:0/1';
     if (phase === 'Running')              return '1/1';
     if (phase === 'Terminating')          return '1/1';
     if (phase === 'Succeeded')            return '0/1';

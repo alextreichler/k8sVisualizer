@@ -524,6 +524,7 @@ function resetSidebarUI() {
     ['btn-scenario-hpa',      '▶ HPA Demo (Autoscale on CPU)'],
     ['btn-scenario-rolling',  '▶ Rolling Update'],
     ['btn-scenario-nodedrain','▶ Node Drain & Upgrade'],
+    ['btn-scenario-istio',    '▶ Istio Service Mesh'],
   ];
   for (const [id, label] of scenarioResets) {
     const btn = document.getElementById(id);
@@ -920,6 +921,46 @@ if (argoCDBtn) {
     }, 30000);
   });
 }
+
+// ---- Istio scenario ----
+wireScenarioBtn('btn-scenario-istio', 'istio', '⏳ Deploying Istio…', '▶ Istio Service Mesh', 28);
+
+// ---- Simulation speed controls ----
+document.querySelectorAll('.speed-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const multiplier = parseFloat(btn.dataset.speed);
+    try {
+      await api.setSpeed(multiplier);
+      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    } catch (e) {
+      console.warn('setSpeed failed:', e);
+    }
+  });
+});
+
+// ---- SVG export ----
+document.getElementById('btn-export-svg')?.addEventListener('click', () => {
+  const svg = document.getElementById('graph-svg');
+  if (!svg) return;
+
+  // Clone and make self-contained
+  const clone = svg.cloneNode(true);
+  clone.removeAttribute('style');
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+  // Inline computed styles for nodes/edges so export looks correct
+  const serializer = new XMLSerializer();
+  const svgStr = serializer.serializeToString(clone);
+  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'k8s-cluster.svg';
+  a.click();
+  URL.revokeObjectURL(url);
+});
 
 // ---- Chaos injection buttons ----
 function pickRandomRunningPod() {
