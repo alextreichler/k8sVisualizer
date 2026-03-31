@@ -23,6 +23,9 @@ type Config struct {
 
 	// MaxConcurrentScenarios caps how many scenario goroutines can run at once (0 = unlimited).
 	MaxConcurrentScenarios int
+
+	// Version is the build version, injected via ldflags.
+	Version string
 }
 
 // Handlers holds shared dependencies for all HTTP handlers.
@@ -65,4 +68,10 @@ func (h *Handlers) decScenarios() {
 // Used by Kubernetes liveness and readiness probes.
 func (h *Handlers) HandleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]string{"status": "ok"}, http.StatusOK)
+}
+
+// HandleBuildInfo handles GET /api/buildinfo.
+// Returns the running binary's version so the UI can display it.
+func (h *Handlers) HandleBuildInfo(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, map[string]string{"version": h.cfg.Version}, http.StatusOK)
 }

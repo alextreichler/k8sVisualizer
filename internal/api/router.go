@@ -69,6 +69,9 @@ func NewRouter(s *store.ClusterStore, broker *SSEBroker, staticFS fs.FS, cfg Con
 	// Health — always available regardless of read-only mode
 	mux.HandleFunc("/healthz", h.HandleHealth)
 
+	// Build info — version string injected at build time
+	mux.HandleFunc("/api/buildinfo", h.HandleBuildInfo)
+
 	return loggingMiddleware(corsMiddleware(cfg, readOnlyMiddleware(cfg.ReadOnly, bodyLimitMiddleware(64*1024, mux))))
 }
 

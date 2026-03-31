@@ -24,6 +24,9 @@ import (
 //go:embed static
 var staticFiles embed.FS
 
+// Version is injected at build time via -ldflags "-X main.Version=v1.2.3"
+var Version = "dev"
+
 func envInt(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
@@ -58,6 +61,7 @@ func main() {
 		ReadOnly:               os.Getenv("READ_ONLY") == "true",
 		MaxSSEClients:          envInt("MAX_SSE_CLIENTS", 100),
 		MaxConcurrentScenarios: envInt("MAX_CONCURRENT_SCENARIOS", 3),
+		Version:                Version,
 	}
 	if origins := os.Getenv("ALLOWED_ORIGINS"); origins != "" {
 		cfg.AllowedOrigins = strings.Split(origins, ",")

@@ -30,6 +30,12 @@ const interaction = new InteractionHandler(svg, sim, (tx, ty, scale) => {
   graph.setViewTransform(tx, ty, scale);
 });
 
+// ---- App version ----
+fetch('/api/buildinfo').then(r => r.json()).then(d => {
+  const el = document.getElementById('app-version');
+  if (el && d.version) el.textContent = d.version;
+}).catch(() => {});
+
 // ---- Node pin persistence (localStorage) ----
 const PINS_KEY = 'k8svis_node_pins';
 
