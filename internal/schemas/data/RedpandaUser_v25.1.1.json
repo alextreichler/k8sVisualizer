@@ -1,0 +1,21 @@
+{
+  "crd": "users.cluster.redpanda.com",
+  "kind": "RedpandaUser",
+  "group": "cluster.redpanda.com",
+  "apiVersion": "v1alpha1",
+  "operatorVersion": "v25.1.1",
+  "sourceURL": "https://raw.githubusercontent.com/redpanda-data/redpanda-operator/v25.1.1/config/crd/bases/cluster.redpanda.com_users.yaml",
+  "fetched": "2026-03-31T00:00:00Z",
+  "fields": [
+    { "path": "spec.authentication.type", "type": "string", "description": "Authentication mechanism for this SASL user. SCRAM-SHA-512 is recommended for production; SCRAM-SHA-256 is compatible with older clients.", "required": true, "enum": ["SCRAM-SHA-256", "SCRAM-SHA-512"] },
+    { "path": "spec.authentication.password.valueFrom.secretKeyRef.name", "type": "string", "description": "Name of the Kubernetes Secret that contains this user's password. The operator reads this Secret and creates the SASL user in Redpanda with the specified credentials.", "required": true },
+    { "path": "spec.authentication.password.valueFrom.secretKeyRef.key", "type": "string", "description": "Key within the referenced Secret that holds the password value.", "required": true },
+    { "path": "spec.authorization.acls", "type": "array", "description": "List of Kafka ACL rules for this user. Each rule specifies a resource type (Topic, Group, TransactionalID), resource name pattern, operation (Read, Write, All, etc.), and permission (Allow, Deny)." },
+    { "path": "spec.deletionPolicy", "type": "string", "description": "Controls whether the SASL user is deleted from Redpanda when the User CR is deleted. 'delete' removes the user from the broker; 'retain' leaves the user account intact. Use 'retain' to safely remove the CR while keeping the user for existing client connections.", "default": "delete", "enum": ["delete", "retain"] },
+    { "path": "spec.kafkaApiSpec.brokers", "type": "array", "description": "Kafka broker addresses (host:port) the operator connects to when creating or updating this SASL user.", "required": true },
+    { "path": "spec.kafkaApiSpec.tls.enabled", "type": "boolean", "description": "Enable TLS for the operator's Kafka connection when managing this user.", "default": "false" },
+    { "path": "spec.kafkaApiSpec.sasl.enabled", "type": "boolean", "description": "Enable SASL for the operator's Kafka connection (the operator itself authenticates to manage users).", "default": "false" },
+    { "path": "spec.kafkaApiSpec.sasl.mechanism", "type": "string", "description": "SASL mechanism for the operator's own Kafka connection.", "enum": ["SCRAM-SHA-256", "SCRAM-SHA-512"] },
+    { "path": "spec.kafkaApiSpec.sasl.secretRef.name", "type": "string", "description": "Secret containing 'username' and 'password' for the operator's admin Kafka connection used to manage this user." }
+  ]
+}

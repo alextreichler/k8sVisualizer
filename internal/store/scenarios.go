@@ -110,7 +110,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 
 	operatorPod.SimPhase = "ContainerCreating"
 	operatorPod.Status = statusJSON(map[string]string{"phase": "Pending", "reason": "ContainerCreating"})
-	step(14, 800*time.Millisecond, "  ↳ pod/redpanda-operator-abc12: ContainerCreating — pulling redpanda-operator:v24.3.0...", func() {
+	step(14, 800*time.Millisecond, "  ↳ pod/redpanda-operator-abc12: ContainerCreating — pulling redpanda-operator:v25.1.0...", func() {
 		s.Update(operatorPod)
 	})
 
@@ -130,13 +130,13 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 	step(17, 300*time.Millisecond, "$ helm install redpanda redpanda/redpanda -n redpanda", nil)
 	step(18, 200*time.Millisecond, "namespace/redpanda already exists — cluster resources will be installed alongside the operator", nil)
 
-	operatorVer := "v2.3.6-24.3.1"
+	operatorVer := "v2.4.0-25.1.1"
 	if useFlux {
 		operatorVer = "v0.7.0-23.3.5"
 	}
 	redpandaCR := node("cr-redpanda", models.KindCustomResource, "cluster.redpanda.com/v1alpha2", "redpanda", "redpanda",
 		labels("app.kubernetes.io/name", "redpanda", "app.kubernetes.io/managed-by", "redpanda-operator"),
-		spec(models.RedpandaClusterSpec{Replicas: 3, Version: "v24.3.1"}))
+		spec(models.RedpandaClusterSpec{Replicas: 3, Version: "v25.1.1"}))
 	step(19, 500*time.Millisecond, "+ redpanda.cluster.redpanda.com/redpanda created  (CR applied — operator Informer will detect this)", func() {
 		s.Add(redpandaCR)
 		s.AddEdge(edge(operatorDeploy.ID, redpandaCR.ID, models.EdgeWatches, "reconcile"))
@@ -340,7 +340,7 @@ func RunRedpandaHelmScenario(s *ClusterStore, apiServerID string, useFlux bool, 
 
 		pod.SimPhase = "ContainerCreating"
 		pod.Status = statusJSON(map[string]string{"phase": "Pending", "reason": "ContainerCreating"})
-		step(stepBase+4, 600*time.Millisecond, fmt.Sprintf("  pod/%s: ContainerCreating — pulling docker.redpanda.com/redpandadata/redpanda:v24.3.1...", podName), func() {
+		step(stepBase+4, 600*time.Millisecond, fmt.Sprintf("  pod/%s: ContainerCreating — pulling docker.redpanda.com/redpandadata/redpanda:v25.1.1...", podName), func() {
 			s.Update(pod)
 		})
 
@@ -1005,10 +1005,10 @@ func redpandaBrokerPod(id, name, ownerRef, cmID, secretID, pvcID string) *models
 		SecretRefs:    []string{secretID},
 		PVCRefs:       []string{pvcID},
 		InitContainers: []models.ContainerInfo{
-			{Name: "redpanda-configurator", Image: "docker.redpanda.com/redpandadata/redpanda-operator:v24.3.0", Role: "init"},
+			{Name: "redpanda-configurator", Image: "docker.redpanda.com/redpandadata/redpanda-operator:v25.1.0", Role: "init"},
 		},
 		Containers: []models.ContainerInfo{
-			{Name: "redpanda", Image: "docker.redpanda.com/redpandadata/redpanda:v24.3.1", Role: "main", Ports: []int{9092, 9644, 33145}},
+			{Name: "redpanda", Image: "docker.redpanda.com/redpandadata/redpanda:v25.1.1", Role: "main", Ports: []int{9092, 9644, 33145}},
 		},
 	}
 	n := node(id, models.KindPod, "v1", name, "redpanda",
@@ -1162,7 +1162,7 @@ func redpandaOperatorPod(id, name, ownerRef string) *models.Node {
 		OwnerRef: ownerRef,
 		Labels:   map[string]string{"app.kubernetes.io/name": "redpanda-operator"},
 		Containers: []models.ContainerInfo{
-			{Name: "manager", Image: "docker.redpanda.com/redpandadata/redpanda-operator:v24.3.0", Role: "main"},
+			{Name: "manager", Image: "docker.redpanda.com/redpandadata/redpanda-operator:v25.1.0", Role: "main"},
 		},
 	}
 	n := node(id, models.KindPod, "v1", name, "redpanda",

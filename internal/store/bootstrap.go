@@ -204,7 +204,7 @@ func loadRedpanda(s *ClusterStore, apiServerID string) {
 	// The Redpanda CR — user creates this, operator reconciles it into a StatefulSet
 	redpandaCR := node("cr-redpanda", models.KindCustomResource, "cluster.redpanda.com/v1alpha2", "redpanda", "redpanda",
 		labels("app.kubernetes.io/name", "redpanda", "app.kubernetes.io/managed-by", "redpanda-operator"),
-		spec(models.RedpandaClusterSpec{Replicas: 3, Version: "v24.3.1"}))
+		spec(models.RedpandaClusterSpec{Replicas: 3, Version: "v25.1.1"}))
 	s.Add(redpandaCR)
 	// Operator watches the CR to reconcile it
 	s.AddEdge(edge(operatorDeploy.ID, redpandaCR.ID, models.EdgeWatches, "reconcile"))
@@ -292,10 +292,10 @@ func loadRedpanda(s *ClusterStore, apiServerID string) {
 			SecretRefs:    []string{redpandaSecret.ID},
 			PVCRefs:       []string{pvcID},
 			InitContainers: []models.ContainerInfo{
-				{Name: "redpanda-configurator", Image: "docker.redpanda.com/redpandadata/redpanda-operator:v24.3.0", Role: "init"},
+				{Name: "redpanda-configurator", Image: "docker.redpanda.com/redpandadata/redpanda-operator:v25.1.0", Role: "init"},
 			},
 			Containers: []models.ContainerInfo{
-				{Name: "redpanda", Image: "docker.redpanda.com/redpandadata/redpanda:v24.3.1", Role: "main", Ports: []int{9092, 9644, 33145}},
+				{Name: "redpanda", Image: "docker.redpanda.com/redpandadata/redpanda:v25.1.1", Role: "main", Ports: []int{9092, 9644, 33145}},
 			},
 		}
 		p := node(podID, models.KindPod, "v1", podName, "redpanda",

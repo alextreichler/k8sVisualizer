@@ -1,0 +1,21 @@
+{
+  "crd": "schemas.cluster.redpanda.com",
+  "kind": "RedpandaSchema",
+  "group": "cluster.redpanda.com",
+  "apiVersion": "v1alpha1",
+  "operatorVersion": "v25.1.1",
+  "sourceURL": "https://raw.githubusercontent.com/redpanda-data/redpanda-operator/v25.1.1/config/crd/bases/cluster.redpanda.com_schemas.yaml",
+  "fetched": "2026-03-31T00:00:00Z",
+  "fields": [
+    { "path": "spec.text", "type": "string", "description": "The schema definition body. Format depends on spec.type: a JSON Schema string for JSON, an Avro JSON schema for AVRO, or a .proto file content for PROTOBUF.", "required": true },
+    { "path": "spec.type", "type": "string", "description": "Schema format / serialization type.", "required": true, "enum": ["JSON", "AVRO", "PROTOBUF"] },
+    { "path": "spec.compatibilityLevel", "type": "string", "description": "Governs how schema evolution is validated against previously registered schemas. BACKWARD (default): new schema can read data written with the old schema. FORWARD: old schema can read data written with the new schema. FULL: both directions. NONE: no compatibility check. *_TRANSITIVE variants enforce compatibility against ALL prior versions, not just the latest.", "default": "BACKWARD", "enum": ["NONE", "BACKWARD", "FORWARD", "FULL", "BACKWARD_TRANSITIVE", "FORWARD_TRANSITIVE", "FULL_TRANSITIVE"] },
+    { "path": "spec.deletionPolicy", "type": "string", "description": "Controls whether the schema is deleted from the Schema Registry when the Schema CR is deleted. 'delete' removes all versions; 'retain' keeps schemas registered (useful for consumers that still reference older schema versions).", "default": "delete", "enum": ["delete", "retain"] },
+    { "path": "spec.schemaRegistrySpec.urls", "type": "array", "description": "Schema Registry endpoint URLs the operator uses to register this schema. Typically the Schema Registry Service URL, e.g. ['http://redpanda.redpanda.svc.cluster.local:8081'].", "required": true },
+    { "path": "spec.schemaRegistrySpec.tls.enabled", "type": "boolean", "description": "Enable TLS for the operator's Schema Registry connection.", "default": "false" },
+    { "path": "spec.schemaRegistrySpec.tls.caSecretRef.name", "type": "string", "description": "Secret containing the CA certificate for verifying the Schema Registry TLS certificate." },
+    { "path": "spec.kafkaApiSpec.brokers", "type": "array", "description": "Kafka broker addresses. Used by the operator for authentication when the Schema Registry requires Kafka-backed auth." },
+    { "path": "spec.kafkaApiSpec.sasl.enabled", "type": "boolean", "description": "Enable SASL authentication for the operator's Kafka connection.", "default": "false" },
+    { "path": "spec.kafkaApiSpec.sasl.secretRef.name", "type": "string", "description": "Secret with 'username' and 'password' for the operator's Kafka authentication." }
+  ]
+}

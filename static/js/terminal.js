@@ -758,7 +758,7 @@ export class Terminal {
     if (n.startsWith('redpanda-') && !n.includes('operator') && !n.includes('post')) {
       const ordinal = n.replace('redpanda-', '') || '0';
       return [
-        `${ts()} INFO  Welcome to Redpanda! - v24.3.1`,
+        `${ts()} INFO  Welcome to Redpanda! - v25.1.1`,
         `${ts()} INFO  (pid 1) Bootstrapping cluster configuration`,
         `${ts()} INFO  Starting Redpanda storage services`,
         `${ts()} INFO  storage - log - I0 - opened log segment: {offset_base: 0}`,

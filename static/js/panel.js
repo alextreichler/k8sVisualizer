@@ -258,7 +258,7 @@ export class DetailPanel {
         if (node.kind === 'StatefulSet' && node.id === 'sts-redpanda') {
           c.innerHTML += section('Rolling Update',
             `<div class="panel-actions">
-              <button class="btn" id="btn-rolling-update" title="Upgrade Redpanda v24.3.1 → v24.3.2 pod by pod (reverse ordinal order)">▶ Upgrade v24.3.1 → v24.3.2</button>
+              <button class="btn" id="btn-rolling-update" title="Upgrade Redpanda v25.1.1 → v25.1.2 pod by pod (reverse ordinal order)">▶ Upgrade v25.1.1 → v25.1.2</button>
             </div>
             <div style="font-size:10px;color:var(--text-muted);margin-top:4px">
               Pods restart 2→1→0 (highest ordinal first) to safely migrate Raft leadership before each restart.

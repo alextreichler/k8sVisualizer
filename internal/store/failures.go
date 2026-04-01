@@ -84,7 +84,7 @@ func SimulateImagePullBackOff(s *ClusterStore, podID string, onStep func(i, tota
 	step(7, 0, "Diagnose:", nil)
 	step(8, 0, fmt.Sprintf("  $ kubectl describe pod %s -n %s | grep -A10 Events:", podName, pod.Namespace), nil)
 	step(9, 0, "Fix: correct the image tag and upgrade:", nil)
-	step(10, 0, "  $ helm upgrade redpanda redpanda/redpanda --set image.tag=v24.3.1 -n redpanda", nil)
+	step(10, 0, "  $ helm upgrade redpanda redpanda/redpanda --set image.tag=v25.1.1 -n redpanda", nil)
 
 	return nil
 }
@@ -135,7 +135,7 @@ func SimulateOOMKill(s *ClusterStore, podID string, onStep func(i, total int, la
 	return nil
 }
 
-// SimulateRollingUpdate upgrades the Redpanda cluster from v24.3.1 → v24.3.2.
+// SimulateRollingUpdate upgrades the Redpanda cluster from v25.1.1 → v25.1.2.
 // Pods restart in reverse ordinal order (2→1→0), matching real StatefulSet rolling-update behavior.
 func SimulateRollingUpdate(s *ClusterStore, onStep func(i, total int, label string)) error {
 	if _, ok := s.Get("sts-redpanda"); !ok {
@@ -151,7 +151,7 @@ func SimulateRollingUpdate(s *ClusterStore, onStep func(i, total int, label stri
 		onStep(i, total, label)
 	}
 
-	step(1, 0, "$ helm upgrade redpanda redpanda/redpanda --set image.tag=v24.3.2 -n redpanda", nil)
+	step(1, 0, "$ helm upgrade redpanda redpanda/redpanda --set image.tag=v25.1.2 -n redpanda", nil)
 	step(2, 500*time.Millisecond, "Release 'redpanda' has been upgraded. Happy Helming!", nil)
 	step(3, 300*time.Millisecond, "StatefulSet: updateStrategy=RollingUpdate  (default partition=0)", nil)
 	step(4, 200*time.Millisecond, "Rolling update order: HIGHEST ordinal first (2→1→0) — safe for Raft leader migration", nil)
@@ -170,14 +170,14 @@ func SimulateRollingUpdate(s *ClusterStore, onStep func(i, total int, label stri
 			}
 		})
 
-		step(stepBase+1, 1000*time.Millisecond, fmt.Sprintf("  pod/%s: deleted — StatefulSet controller creating replacement with v24.3.2", podName), func() {
+		step(stepBase+1, 1000*time.Millisecond, fmt.Sprintf("  pod/%s: deleted — StatefulSet controller creating replacement with v25.1.2", podName), func() {
 			s.Delete(podID)
 			pod := redpandaBrokerPod(podID, podName, "sts-redpanda", "cm-redpanda", "secret-redpanda-users", pvcID)
 			// Patch image to new version
 			var ps models.PodSpec
 			if err := json.Unmarshal(pod.Spec, &ps); err == nil {
 				for idx := range ps.Containers {
-					ps.Containers[idx].Image = "docker.redpanda.com/redpandadata/redpanda:v24.3.2"
+					ps.Containers[idx].Image = "docker.redpanda.com/redpandadata/redpanda:v25.1.2"
 				}
 				pod.Spec, _ = json.Marshal(ps)
 			}
@@ -196,7 +196,7 @@ func SimulateRollingUpdate(s *ClusterStore, onStep func(i, total int, label stri
 			}
 		})
 
-		step(stepBase+2, 1500*time.Millisecond, fmt.Sprintf("  pod/%s: Running ✓  (redpanda:v24.3.2)", podName), func() {
+		step(stepBase+2, 1500*time.Millisecond, fmt.Sprintf("  pod/%s: Running ✓  (redpanda:v25.1.2)", podName), func() {
 			if pod, ok := s.Get(podID); ok {
 				setPodSimPhase(s, pod, string(models.PodRunning), "Running", "", "")
 				var ps models.PodSpec
@@ -213,7 +213,7 @@ func SimulateRollingUpdate(s *ClusterStore, onStep func(i, total int, label stri
 		}
 	}
 
-	step(17, 300*time.Millisecond, "StatefulSet redpanda: 3/3 ready  (all brokers running v24.3.2)", nil)
+	step(17, 300*time.Millisecond, "StatefulSet redpanda: 3/3 ready  (all brokers running v25.1.2)", nil)
 	step(18, 200*time.Millisecond, "Rolling update complete ✓", nil)
 	step(19, 200*time.Millisecond, "Tip: to verify → $ kubectl rollout status sts/redpanda -n redpanda", nil)
 	step(20, 0, "Rollback if needed → $ helm rollback redpanda 1 -n redpanda", nil)

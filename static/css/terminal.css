@@ -121,3 +121,19 @@
   color: var(--text-muted);
   opacity: 0.5;
 }
+
+/* ---- Light theme: keep the terminal always dark ---- */
+[data-theme="light"] #terminal-inner {
+  background: rgba(10, 12, 18, 0.97);
+}
+[data-theme="light"] .term-line            { color: #e2e8f0; }
+[data-theme="light"] .term-line.term-cmd   { color: #6ba0f9; }
+[data-theme="light"] .term-line.term-prompt{ color: #4caf82; }
+[data-theme="light"] .term-line.term-error { color: #e05252; }
+[data-theme="light"] .term-line.term-warn  { color: #f5a623; }
+[data-theme="light"] .term-line.term-muted { color: #9aaac4; }
+[data-theme="light"] .term-line.term-header{ color: #9aaac4; }
+[data-theme="light"] #terminal-input       { color: #e2e8f0; caret-color: #6ba0f9; }
+[data-theme="light"] #terminal-prompt-label{ color: #4caf82; }
+[data-theme="light"] #terminal-topbar span { color: #6ba0f9; }
+[data-theme="light"] #terminal-topbar .term-hint { color: #9aaac4; }

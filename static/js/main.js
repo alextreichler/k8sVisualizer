@@ -694,7 +694,7 @@ if (btnWorkers) {
     btnWorkers.disabled = true;
     btnWorkers.textContent = '⏳ Joining workers…';
     try {
-      await api.bootstrap('workers');
+      await api.bootstrap('worker-nodes');
     } catch (e) {
       appendBootstrapLine('Error: ' + e.message, 1, 1);
       btnWorkers.disabled = false;

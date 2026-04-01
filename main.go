@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"os/signal"
@@ -38,6 +39,14 @@ func envInt(key string, def int) int {
 }
 
 func main() {
+	// Explicitly register common web MIME types so http.FileServer serves them
+	// correctly in minimal container environments (Alpine, scratch) that lack
+	// /etc/mime.types. Browsers block ES modules without text/javascript.
+	_ = mime.AddExtensionType(".js",  "text/javascript; charset=utf-8")
+	_ = mime.AddExtensionType(".mjs", "text/javascript; charset=utf-8")
+	_ = mime.AddExtensionType(".css", "text/css; charset=utf-8")
+	_ = mime.AddExtensionType(".svg", "image/svg+xml")
+
 	port := flag.Int("port", 8090, "HTTP server port")
 	version := flag.String("k8s-version", k8sversions.DefaultVersion, "Kubernetes version to simulate")
 	mode := flag.String("mode", "none", "Startup mode: 'full' (full sample cluster), 'empty' (control plane only), or 'none' (completely empty)")
